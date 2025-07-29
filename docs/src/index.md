@@ -7,7 +7,7 @@ static and non-static values and arrays. It bridges between
 [FillArrays](https://github.com/JuliaArrays/FillArrays.jl), as well as
 non-static values and arrays.
 
-The package provides the type aliases [`StaticUnitRange`](@ref), [`StaticOneTo`](@ref), [`IntegerLike`](@ref), [`SizeLike`](@ref), [`StaticSizeLike`](@ref), [`AxesLike`](@ref), [`StaticAxesLike`](@ref), [`OneToLike`](@ref), [`StaticOneToLike`](@ref) and [`StaticUnitRangeLike`](@ref), as union-based super-types for related types across Static, StaticArrays and Base.
+The package provides the type aliases [`StaticUnitRange`](@ref), [`StaticOneTo`](@ref), [`IntegerLike`](@ref), [`RealLike`](@ref), [`SizeLike`](@ref), [`StaticSizeLike`](@ref), [`AxesLike`](@ref), [`StaticAxesLike`](@ref), [`OneToLike`](@ref), [`StaticOneToLike`](@ref) and [`StaticUnitRangeLike`](@ref), as union-based super-types for related types across Static, StaticArrays and Base.
 
 Built around these alias types, StaticThings provides:
 

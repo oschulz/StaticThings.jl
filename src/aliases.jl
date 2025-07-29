@@ -32,10 +32,19 @@ export StaticOneTo
 """
     IntegerLike = Union{Integer,Static.StaticInteger}
 
-Equivalent to `Union{Integer,Static.StaticInteger}`.
+A static of dynamic integer value.
 """
 const IntegerLike = Union{Integer,Static.StaticInteger}
 export IntegerLike
+
+
+"""
+    RealLike = `Union{Real,Static.StaticInteger}`
+
+A static or dynamic real value.
+"""
+const RealLike = Union{Real,Static.StaticInteger}
+export RealLike
 
 
 """

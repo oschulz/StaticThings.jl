@@ -17,6 +17,7 @@ using StaticArrays: SArray, SVector
 
 @testset "satools" begin
     v = 4.2
+    sv = static(4.2)
     T = typeof(v)
 
     tpl = (7, 42, 5)
@@ -27,6 +28,13 @@ using StaticArrays: SArray, SVector
 
     @test i isa IntegerLike
     @test si isa IntegerLike
+    @test !(v isa IntegerLike)
+    @test !(sv isa IntegerLike)
+
+    @test i isa RealLike
+    @test si isa RealLike
+    @test v isa RealLike
+    @test sv isa RealLike
 
     sz = (2, 4, 3)
     sasz = StaticArrays.Size(2, 4, 3)
