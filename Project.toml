@@ -1,6 +1,6 @@
 name = "StaticThings"
 uuid = "7e4b4f32-fbf9-4b74-9510-4d15222ac973"
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
