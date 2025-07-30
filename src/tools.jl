@@ -358,6 +358,10 @@ Requires values of type `T` to have a fixed known size, returns
 function size_from_type end
 export size_from_type
 
+#!!!!!!!!!!!!!!!! ToDo: Maybe use something like
+size_from_type(A) = canonical_size(static(StaticArrayInterface.known_size(A)))
+
+
 size_from_type(::Type{T}) where {T} = NoTypeSize{T}()
 size_from_type(::Type{<:Number}) = ()
 size_from_type(::Type{Tuple{}}) = StaticArrays.Size(0)
