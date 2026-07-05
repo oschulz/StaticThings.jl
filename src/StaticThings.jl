@@ -8,14 +8,13 @@ static and non-static values and arrays.
 """
 module StaticThings
 
-import FillArrays
-using FillArrays: Fill
+using FillArrays: FillArrays, Fill
 
-import Static
-using Static: StaticInteger, static, dynamic
+using Static: Static, StaticInteger, static, dynamic
 
-import StaticArrays
-using StaticArrays: StaticArray, SArray, SVector
+using StaticArrayInterface: StaticArrayInterface
+
+using StaticArrays: StaticArrays, StaticArray, SArray, SVector
 
 include("aliases.jl")
 include("tools.jl")

@@ -10,7 +10,8 @@
 StaticThings provides tools to help write generic code that works with both
 static and non-static values and arrays. It bridges between
 [Static](https://github.com/SciML/Static.jl) values,
-[StaticArrays](https://github.com/JuliaArrays/StaticArrays.jl) and
+[StaticArrays](https://github.com/JuliaArrays/StaticArrays.jl),
+[StaticArrayInterface](https://github.com/JuliaArrays/StaticArrayInterface.jl) and
 [FillArrays](https://github.com/JuliaArrays/FillArrays.jl), as well as
 non-static values and arrays.
 

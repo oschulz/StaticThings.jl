@@ -131,7 +131,7 @@ using StaticArrays: SArray, SVector
 
     @test @inferred(maybestatic_fill(v, i)) === Fill(v, i)
     @test @inferred(maybestatic_fill(v, si)) === SVector(fill(v, i)...)
-    @test @inferred(maybestatic_fill(v, ())) === Fill(v)
+    @test @inferred(maybestatic_fill(v, ())) === SArray{Tuple{},T,0,1}(v)
 
     @test @inferred(maybestatic_fill(v, sz)) === Fill(v, sz)
     @test @inferred(maybestatic_fill(v, sasz)) === SArray{Tuple{sz...},T}(fill(v, sz))
@@ -177,6 +177,9 @@ using StaticArrays: SArray, SVector
     @test maybestatic_reshape(SA, sz) isa Base.ReshapedArray{T,3,<:SVector}
     @test @inferred(maybestatic_reshape(SA, sasz)) === rshpSA
     @test @inferred(maybestatic_reshape(SA, sisz)) === rshpSA
+
+    @test @inferred(maybestatic_reshape(SVector(v), ())) === SArray{Tuple{},T,0,1}(v)
+    @test @inferred(maybestatic_reshape([v], ())) === SArray{Tuple{},T,0,1}(v)
 
     @test @inferred(maybestatic_length(5)) === static(1)
     @test @inferred(maybestatic_length(())) === static(0)
@@ -276,7 +279,7 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_first(sz)) === first(sz)
     @test @inferred(maybestatic_first(sasz)) === static(first(sz))
     @test @inferred(maybestatic_first(sisz)) === static(first(sz))
-    @test @inferred(maybestatic_first(axs[1])) === first(axs[1])
+    @test @inferred(maybestatic_first(axs[1])) === static(first(axs[1]))
     @test @inferred(maybestatic_first(axs[2])) === first(axs[2])
     @test @inferred(maybestatic_first(saaxs[1])) === static(first(axs[1]))
     @test @inferred(maybestatic_first(saaxs[2])) === static(first(axs[2]))
@@ -341,6 +344,11 @@ using StaticArrays: SArray, SVector
     @test @inferred(size_from_type(typeof(sisz))) === maybestatic_size(sisz)
     @test @inferred(size_from_type(typeof(SA))) === maybestatic_size(SA)
     @test @inferred(size_from_type(typeof(rshpSA))) === maybestatic_size(rshpSA)
+    @test @inferred(size_from_type(SArray{Tuple{},T,0,1})) === StaticArrays.Size()
+    @test @inferred(size_from_type(typeof(SA'))) === StaticArrays.Size(1, len)
+    @test @inferred(size_from_type(typeof(view(rshpSA, :, 1, 1)))) === StaticArrays.Size(2)
+    @test @inferred(size_from_type(SVector)) === NoTypeSize{SVector}()
     @test @inferred(size_from_type(eltype(A))) === maybestatic_size(A[1])
     @test @inferred(size_from_type(typeof(A))) === NoTypeSize{typeof(A)}()
+    @test @inferred(size_from_type(String)) === NoTypeSize{String}()
 end

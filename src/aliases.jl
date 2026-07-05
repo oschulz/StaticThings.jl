@@ -60,6 +60,9 @@ export SizeLike
     StaticSizeLike = Union{Tuple{Vararg{StaticInteger}},StaticArrays.Size}
 
 Something that can represent the size of a statically sized collection.
+
+The empty size `()` counts as static: a zero-dimensional size is fully
+known at compile time.
 """
 const StaticSizeLike = Union{Tuple{Vararg{StaticInteger}},StaticArrays.Size}
 export StaticSizeLike

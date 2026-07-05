@@ -51,7 +51,7 @@ export maybestatic_fill
 
 @inline maybestatic_fill(x::T, n::IntegerLike) where {T} = maybestatic_fill(x, (n,))
 
-@inline maybestatic_fill(x::T, ::Tuple{}) where {T} = FillArrays.Fill(x)
+@inline maybestatic_fill(x, ::Tuple{}) = maybestatic_fill(x, StaticArrays.Size())
 
 @inline maybestatic_fill(x, sz::SizeLike) = maybestatic_fill(x, size2axes(sz))
 
@@ -163,14 +163,7 @@ export maybestatic_axes
 @inline maybestatic_axes(::Tuple{Vararg{Any,N}}) where {N} = (StaticOneTo(N),)
 @inline maybestatic_axes(nt::NamedTuple) = maybestatic_axes(values(nt))
 @inline maybestatic_axes(::StaticArrays.Size{tpl}) where {tpl} = (StaticOneTo(length(tpl)),)
-@inline maybestatic_axes(::StaticOneToLike{N}) where {N} = (StaticOneTo(N),)
-@static if isdefined(StaticArrays, :SUnitRange)
-    @inline maybestatic_axes(r::StaticArrays.SUnitRange) = axes(r)
-end
-@inline maybestatic_axes(r::Static.OptionallyStaticUnitRange) = canonical_axes(axes(r))
-@inline maybestatic_axes(r::AbstractUnitRange) = axes(r)
-@inline maybestatic_axes(A::AbstractArray) = axes(A)
-@inline maybestatic_axes(A::StaticArray) = axes(A)
+@inline maybestatic_axes(A::AbstractArray) = canonical_axes(axes(A))
 
 
 """
@@ -261,6 +254,7 @@ maybestatic_first(x::Number) = x
 maybestatic_first(tpl::Tuple) = tpl[begin]
 maybestatic_first(nt::NamedTuple) = nt[begin]
 maybestatic_first(A::AbstractArray) = A[begin]
+maybestatic_first(::Base.OneTo) = static(1)
 maybestatic_first(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[begin])
 maybestatic_first(::StaticArrays.SOneTo{N}) where {N} = static(1)
 @static if isdefined(StaticArrays, :SUnitRange)
@@ -358,6 +352,8 @@ type `T`.
 
 Requires values of type `T` to have a fixed known size, returns
 [`StaticThings.NoTypeSize{T}()`](@ref StaticThings.NoTypeSize) otherwise.
+
+For array types the size is determined via `StaticArrayInterface.known_size`.
 """
 function size_from_type end
 export size_from_type
@@ -370,4 +366,10 @@ size_from_type(::Type{<:NamedTuple{names}}) where {names} = StaticArrays.Size(le
 function size_from_type(::Type{<:StaticArrays.Size{tpl}}) where {tpl}
     StaticArrays.Size(length(tpl))
 end
-size_from_type(::Type{AT}) where {AT<:StaticArray} = StaticArrays.Size(AT)
+@inline function size_from_type(::Type{AT}) where {AT<:AbstractArray}
+    _knownsize2size(AT, StaticArrayInterface.known_size(AT))
+end
+
+# Convert a `StaticArrayInterface.known_size` result to a canonical size:
+@inline _knownsize2size(::Type, ksz::Tuple{Vararg{Int}}) = canonical_size(static(ksz))
+@inline _knownsize2size(::Type{AT}, ::Tuple) where {AT} = NoTypeSize{AT}()
