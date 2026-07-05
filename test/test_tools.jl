@@ -116,6 +116,7 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_oneto(i)) == Base.OneTo(i)
     @test @inferred(maybestatic_oneto(si)) == StaticOneTo(i)
 
+    @test @inferred(asnonstatic(())) === ()
     @test @inferred(asnonstatic(i)) === i
     @test @inferred(asnonstatic(si)) === i
     @test @inferred(asnonstatic(sz)) === sz
@@ -126,6 +127,7 @@ using StaticArrays: SArray, SVector
     @test @inferred(asnonstatic(saaxs1)) === (Base.OneTo(2), Base.OneTo(4), Base.OneTo(3))
     @test @inferred(asnonstatic(siaxs)) === axs
     @test @inferred(asnonstatic(siaxs1)) === (Base.OneTo(2), Base.OneTo(4), Base.OneTo(3))
+    @test @inferred(asnonstatic(sv)) === v
 
     @test @inferred(maybestatic_fill(v, i)) === Fill(v, i)
     @test @inferred(maybestatic_fill(v, si)) === SVector(fill(v, i)...)
@@ -140,8 +142,10 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_fill(v, saaxs1)) === SArray{Tuple{sz...},T}(fill(v, sz))
     @test @inferred(maybestatic_fill(v, siaxs)) === Fill(v, axs)
     @test @inferred(maybestatic_fill(v, siaxs1)) === SArray{Tuple{sz...},T}(fill(v, sz))
+    @test @inferred(maybestatic_fill(v, StaticArrays.Size())) === SArray{Tuple{},T,0,1}(v)
 
     @test @inferred(staticarray_type(T, sasz)) <: SArray{Tuple{2,4,3},T}
+    @test @inferred(staticarray_type(T, StaticArrays.Size(3))) === SVector{3,T}
 
     A = rand(T, len)
     FA = Fill(v, len)
@@ -182,6 +186,7 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_length(StaticArrays.SOneTo(4))) === static(4)
     @test @inferred(maybestatic_length(Static.SOneTo(4))) === static(4)
     @test @inferred(maybestatic_length(static(2):static(5))) === static(4)
+    @test @inferred(maybestatic_length(StaticUnitRange(2, 5))) === static(4)
     @test @inferred(maybestatic_length(rshpA)) === length(rshpA)
     @test @inferred(maybestatic_length(rshpFA)) === length(rshpA)
     @test @inferred(maybestatic_length(rshpSA)) === static(length(rshpA))
@@ -209,6 +214,7 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_axes((a = 2, b = 4, c = 3))) === (StaticOneTo(3),)
     @test @inferred(maybestatic_axes(Base.OneTo(4))) === (Base.OneTo(4),)
     @test @inferred(maybestatic_axes(StaticArrays.SOneTo(4))) === (StaticOneTo(4),)
+    @test @inferred(maybestatic_axes(StaticUnitRange(2, 5))) === (StaticOneTo(4),)
     @test @inferred(maybestatic_axes(Static.SOneTo(4))) === (StaticOneTo(4),)
     @test @inferred(maybestatic_axes(static(2):static(5))) === (StaticOneTo(4),)
     @test @inferred(maybestatic_axes(rshpA)) === axes(rshpA)
@@ -245,9 +251,11 @@ using StaticArrays: SArray, SVector
     @test @inferred(asaxes(siaxs)) === siaxs
     @test @inferred(asaxes(siaxs1)) === siaxs1
 
+    @test @inferred(maybestatic_eachindex(v)) === StaticOneTo(1)
     @test @inferred(maybestatic_eachindex(())) === StaticOneTo(0)
     @test @inferred(maybestatic_eachindex(tpl)) === StaticOneTo(3)
     @test @inferred(maybestatic_eachindex(nt)) === StaticOneTo(3)
+    @test @inferred(maybestatic_eachindex(sasz)) === StaticOneTo(3)
     @test @inferred(maybestatic_eachindex(axs[1])) === Base.OneTo(length(axs[1]))
     @test @inferred(maybestatic_eachindex(axs[2])) === Base.OneTo(length(axs[2]))
     @test @inferred(maybestatic_eachindex(saaxs[1])) === StaticOneTo(length(axs[1]))
@@ -260,6 +268,9 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_eachindex(SA)) === StaticOneTo(24)
 
     @test_throws BoundsError maybestatic_first(())
+    @test @inferred(maybestatic_first(v)) === v
+    @test @inferred(maybestatic_first(sv)) === sv
+    @test @inferred(maybestatic_first(static(2):5)) === static(2)
     @test @inferred(maybestatic_first(tpl)) === first(tpl)
     @test @inferred(maybestatic_first(nt)) === first(nt)
     @test @inferred(maybestatic_first(sz)) === first(sz)
@@ -277,6 +288,9 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_first(SA)) === first(SA)
 
     @test_throws BoundsError maybestatic_last(())
+    @test @inferred(maybestatic_last(v)) === v
+    @test @inferred(maybestatic_last(sv)) === sv
+    @test @inferred(maybestatic_last(2:static(5))) === static(5)
     @test @inferred(maybestatic_last(tpl)) === last(tpl)
     @test @inferred(maybestatic_last(nt)) === last(nt)
     @test @inferred(maybestatic_last(sz)) === last(sz)
@@ -299,6 +313,7 @@ using StaticArrays: SArray, SVector
     @test @inferred(canonical_indices(saaxs[2])) === saaxs[2]
     @test @inferred(canonical_indices(siaxs[1])) === saaxs[1]
     @test @inferred(canonical_indices(siaxs[2])) === saaxs[2]
+    @test @inferred(canonical_indices(static(1):len)) === Base.OneTo(len)
     @test @inferred(canonical_indices(ciidxs)) === ciidxs
 
     @test @inferred(canonical_size(sz)) === sz
@@ -323,6 +338,9 @@ using StaticArrays: SArray, SVector
     @test @inferred(size_from_type(typeof(saaxs))) === maybestatic_size(saaxs)
     @test @inferred(size_from_type(typeof(saaxs1))) === maybestatic_size(saaxs1)
     @test @inferred(size_from_type(typeof(siaxs))) === maybestatic_size(siaxs)
+    @test @inferred(size_from_type(typeof(sisz))) === maybestatic_size(sisz)
+    @test @inferred(size_from_type(typeof(SA))) === maybestatic_size(SA)
+    @test @inferred(size_from_type(typeof(rshpSA))) === maybestatic_size(rshpSA)
     @test @inferred(size_from_type(eltype(A))) === maybestatic_size(A[1])
     @test @inferred(size_from_type(typeof(A))) === NoTypeSize{typeof(A)}()
 end

@@ -20,7 +20,7 @@ export maybestatic_oneto
 
 Return a non-static equivalent of `x`.
 
-Defaults to `Static.dynamic(x)`.
+Defined for numbers, tuples, ranges, sizes and axes.
 """
 function asnonstatic end
 export asnonstatic
@@ -133,10 +133,10 @@ end
 @inline maybestatic_length(::Static.SOneTo{N}) where {N} = static(N)
 
 """
+    maybestatic_size(x)::SizeLike
 
-    maybestatic_size(x)
-
-Returns the size of `x` as a tuple of dynamic or static integers.
+Returns the size of `x` as a tuple of dynamic or static integers or as a
+`StaticArrays.Size`.
 """
 function maybestatic_size end
 export maybestatic_size
@@ -150,9 +150,9 @@ export maybestatic_size
 @inline maybestatic_size(A::StaticArray) = StaticArrays.Size(A)
 
 """
-    maybestatic_axes(x)::Tuple{Vararg{IntegerLike}}
+    maybestatic_axes(x)::AxesLike
 
-Returns the size of `x` as a tuple of dynamic or static integers.
+Returns the axes of `x` as a tuple of dynamic or static unit ranges.
 """
 function maybestatic_axes end
 export maybestatic_axes
@@ -177,7 +177,7 @@ end
     StaticThings.axes2size(x::Tuple)
     StaticThings.axes2size(x::StaticArrays.Size)
 
-Get the size of a collection-like object from it's axes.
+Get the size of a collection-like object from its axes.
 """
 function axes2size end
 export axes2size
@@ -236,14 +236,16 @@ export asaxes
 """
     maybestatic_eachindex(x)
 
-Returns the the index range of `x` as a dynamic or static integer range
+Returns the index range of `x` as a dynamic or static integer range.
 """
 function maybestatic_eachindex end
 export maybestatic_eachindex
 
+maybestatic_eachindex(::Number) = StaticOneTo(1)
 maybestatic_eachindex(::Tuple{}) = StaticOneTo(0)
 maybestatic_eachindex(::Tuple{Vararg{Any,N}}) where {N} = StaticOneTo(N)
 maybestatic_eachindex(nt::NamedTuple) = maybestatic_eachindex(values(nt))
+maybestatic_eachindex(::StaticArrays.Size{tpl}) where {tpl} = StaticOneTo(length(tpl))
 maybestatic_eachindex(x::AbstractArray) = canonical_indices(eachindex(x))
 
 
@@ -255,6 +257,7 @@ Returns the first element of `A` as a dynamic or static value.
 function maybestatic_first end
 export maybestatic_first
 
+maybestatic_first(x::Number) = x
 maybestatic_first(tpl::Tuple) = tpl[begin]
 maybestatic_first(nt::NamedTuple) = nt[begin]
 maybestatic_first(A::AbstractArray) = A[begin]
@@ -264,7 +267,7 @@ maybestatic_first(::StaticArrays.SOneTo{N}) where {N} = static(1)
     maybestatic_first(::StaticArrays.SUnitRange{B,L}) where {B,L} = static(B)
 end
 function maybestatic_first(
-    ::Static.OptionallyStaticUnitRange{<:Static.StaticInteger{from},<:Static.StaticInteger},
+    ::Static.OptionallyStaticUnitRange{<:Static.StaticInteger{from}},
 ) where {from}
     static(from)
 end
@@ -278,6 +281,7 @@ Returns the last element of `A` as a dynamic or static value.
 function maybestatic_last end
 export maybestatic_last
 
+maybestatic_last(x::Number) = x
 maybestatic_last(tpl::Tuple) = tpl[end]
 maybestatic_last(nt::NamedTuple) = nt[end]
 maybestatic_last(A::AbstractArray) = A[end]
@@ -327,9 +331,9 @@ export canonical_size
     StaticArrays.Size{map(dynamic, sz)}()
 
 """
-    canonical_axes(sz::SizeLike)
+    canonical_axes(axs::AxesLike)
 
-Return the canonical representation collection axes.
+Return the canonical representation of collection axes.
 """
 function canonical_axes end
 export canonical_axes
@@ -338,9 +342,9 @@ export canonical_axes
 
 
 """
-    StaticThings.NoTypeSize(T)
+    StaticThings.NoTypeSize{T}()
 
-Returned by [`StaticThings.size_from_type(T)`](@ref) if the size of values of type
+Returned by [`size_from_type`](@ref) if the size of values of type
 `T` is not fixed or not known.
 """
 struct NoTypeSize{T} end
@@ -353,7 +357,7 @@ Get the size (equivalent of StaticThings.maybestatic_size) of values of
 type `T`.
 
 Requires values of type `T` to have a fixed known size, returns
-[`StaticThings.NoTypeSize{T}()`](@ref) otherwise.
+[`StaticThings.NoTypeSize{T}()`](@ref StaticThings.NoTypeSize) otherwise.
 """
 function size_from_type end
 export size_from_type
@@ -366,4 +370,4 @@ size_from_type(::Type{<:NamedTuple{names}}) where {names} = StaticArrays.Size(le
 function size_from_type(::Type{<:StaticArrays.Size{tpl}}) where {tpl}
     StaticArrays.Size(length(tpl))
 end
-size_from_type(::Type{AT}) where {AT<:StaticArray} = StaticArrays.Size(T)
+size_from_type(::Type{AT}) where {AT<:StaticArray} = StaticArrays.Size(AT)
