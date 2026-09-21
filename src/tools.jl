@@ -125,7 +125,8 @@ export maybestatic_length
 @static if isdefined(StaticArrays, :SUnitRange)
     @inline maybestatic_length(r::StaticArrays.SUnitRange) = maybestatic_last(r) - maybestatic_first(r) + static(1)
 end
-@inline maybestatic_length(r::AbstractUnitRange) = maybestatic_last(r) - maybestatic_first(r) + static(1)
+@inline maybestatic_length(r::AbstractUnitRange) =
+    max(static(0), maybestatic_last(r) - maybestatic_first(r) + static(1))
 @inline maybestatic_length(r::Base.OneTo) = length(r)
 @inline maybestatic_length(::StaticArrays.SOneTo{N}) where {N} = static(N)
 @inline maybestatic_length(::Static.SOneTo{N}) where {N} = static(N)
@@ -270,6 +271,7 @@ maybestatic_first(x::Number) = x
 maybestatic_first(tpl::Tuple) = tpl[begin]
 maybestatic_first(nt::NamedTuple) = nt[begin]
 maybestatic_first(A::AbstractArray) = A[begin]
+maybestatic_first(r::AbstractRange) = first(r)
 maybestatic_first(::Base.OneTo) = static(1)
 maybestatic_first(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[begin])
 maybestatic_first(::StaticArrays.SOneTo{N}) where {N} = static(1)
@@ -295,6 +297,7 @@ maybestatic_last(x::Number) = x
 maybestatic_last(tpl::Tuple) = tpl[end]
 maybestatic_last(nt::NamedTuple) = nt[end]
 maybestatic_last(A::AbstractArray) = A[end]
+maybestatic_last(r::AbstractRange) = last(r)
 maybestatic_last(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[end])
 maybestatic_last(::StaticArrays.SOneTo{N}) where {N} = static(N)
 @static if isdefined(StaticArrays, :SUnitRange)
