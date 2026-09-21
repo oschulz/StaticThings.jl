@@ -455,6 +455,8 @@ end
           dropdims(all(B, dims = (1, 2)), dims = (1, 2))
 
     @test @inferred(all_leading_dims(B, static(0))) === B
+    @test @inferred(all_leading_dims(fill(true), static(0))) === true
+    @test @inferred(sum_leading_dims(fill(4.2), static(0))) === 4.2
     @test @inferred(sum_leading_dims(bc, static(0))) === bc
     for f in (sum_leading_dims, drop_leading_dims, merge_leading_dims), n in (-1, 4)
         @test_throws DimensionMismatch f(A, static(n))

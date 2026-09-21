@@ -608,10 +608,10 @@ end
 # dimensions, `red(A; dims)` over the given ones:
 @inline function _reduce_leading_dims(red::F, A, n::StaticInteger{N}) where {F,N}
     _check_leading_dims(A, n)
-    if N == 0
-        A
-    elseif N == ndims(A)
+    if N == ndims(A)
         red(A)
+    elseif N == 0
+        A
     else
         drop_leading_dims(_reduce_dims(red, A, n), n)
     end
@@ -657,10 +657,10 @@ export sum_leading_dims
 
 @inline function sum_leading_dims(bc::Broadcast.Broadcasted, n::StaticInteger{N}) where {N}
     _check_leading_dims(bc, n)
-    if N == 0
-        bc
-    elseif N == ndims(bc)
+    if N == ndims(bc)
         _sum_broadcast(bc)
+    elseif N == 0
+        bc
     else
         sum_leading_dims(copy(bc), n)
     end
