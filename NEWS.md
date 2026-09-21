@@ -22,3 +22,4 @@ New:
   number of leading dimensions, keeping static arrays static.
 * `maybestatic_view(A, r)` and `split_at(A, n)`, views and splits of
   vectors and tuples that stay static for static inputs and indices.
+  Views of mutable static vectors share their memory.

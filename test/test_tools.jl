@@ -12,7 +12,7 @@ import Static
 using Static: static
 
 import StaticArrays
-using StaticArrays: SArray, SVector
+using StaticArrays: SArray, SVector, MVector, SizedVector, StaticVector
 
 
 @testset "satools" begin
@@ -469,6 +469,33 @@ end
     @test sa === SVector{2}(A[1:2]) && sb === SVector{4}(A[3:6])
     sa0, sb0 = @inferred split_at(SA, static(0))
     @test sa0 === SVector{0,Float64}() && sb0 === SA
+    sa6, sb6 = @inferred split_at(SA, static(6))
+    @test sa6 === SA && sb6 === SVector{0,Float64}()
+    ta, tb = @inferred split_at(tpl, static(2))
+    @test ta === tpl[1:2] && tb === tpl[3:6]
+    @test split_at(A, 0) == (A[1:0], A)
+    for n in (-1, 7)
+        @test_throws ArgumentError split_at(A, n)
+        @test_throws ArgumentError split_at(SA, static(n))
+        @test_throws ArgumentError split_at(tpl, static(n))
+    end
+
+    # Empty ranges:
+    @test @inferred(maybestatic_view(A, 3:2)) == Float64[]
+    @test @inferred(maybestatic_view(A, 5, 2)) == Float64[]
+    @test @inferred(maybestatic_view(SA, static(3):static(2))) === SVector{0,Float64}()
+    @test @inferred(maybestatic_view(SA, static(5), static(2))) === SVector{0,Float64}()
+    @test @inferred(maybestatic_view(tpl, static(5), static(2))) === ()
+
+    # Views of mutable static vectors share their memory:
+    for MA in (MVector{6}(A), SizedVector{6}(copy(A)))
+        va = @inferred maybestatic_view(MA, static(2), static(4))
+        @test va isa StaticVector{3}
+        ma, mb = @inferred split_at(MA, static(2))
+        @test ma isa StaticVector{2} && mb isa StaticVector{4}
+        MA[2] = 42
+        @test va[1] == 42 && ma[2] == 42
+    end
 end
 
 

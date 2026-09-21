@@ -413,11 +413,12 @@ end
     maybestatic_view(A, r::AbstractUnitRange)
     maybestatic_view(A, from::IntegerLike, until::IntegerLike)
 
-The elements of the vector or tuple `A` over the index range `r`, resp.
-from index `from` to index `until`.
+A view of the vector or tuple `A` over the index range `r`, resp. from index
+`from` to index `until`.
 
-Static vectors and tuples give static results for static indices, other
-vectors give a `view`.
+Static vectors give statically sized results for static indices, as
+StaticArrays' `view` does: a static vector if `A` is immutable, a statically
+sized view otherwise. Tuples give tuples, other vectors a `view`.
 """
 function maybestatic_view end
 export maybestatic_view
@@ -435,10 +436,10 @@ end
 
 Base.@propagate_inbounds function maybestatic_view(
     A::StaticVector,
-    from::StaticInteger{F},
-    until::StaticInteger{U},
+    ::StaticInteger{F},
+    ::StaticInteger{U},
 ) where {F,U}
-    SVector{U - F + 1,eltype(A)}(maybestatic_view(Tuple(A), from, until))
+    view(A, StaticUnitRange(F, U))
 end
 
 Base.@propagate_inbounds function maybestatic_view(
@@ -446,27 +447,32 @@ Base.@propagate_inbounds function maybestatic_view(
     from::IntegerLike,
     until::IntegerLike,
 )
-    ntuple(i -> tpl[from+i-1], Val(dynamic(until - from + one(from))))
+    ntuple(i -> tpl[from+i-1], Val(dynamic(max(static(0), until - from + one(from)))))
 end
 
 
 """
-    split_at(A::AbstractVector, n::IntegerLike)
+    split_at(A, n::IntegerLike)
 
-Split `A` into its first `n` elements and the rest.
+Split the vector or tuple `A` into its first `n` elements and the rest.
 
-Static vectors give static results for a static `n`.
+The parts are views as [`maybestatic_view`](@ref) gives them, statically
+sized for static vectors and tuples if `n` is static.
 """
 function split_at end
 export split_at
 
-@inline function split_at(A::AbstractVector, n::IntegerLike)
+@inline function split_at(A::Union{AbstractVector,Tuple}, n::IntegerLike)
+    len = maybestatic_length(A)
+    0 <= dynamic(n) <= dynamic(len) || _throw_split_out_of_range(n, len)
     idxs = maybestatic_eachindex(A)
     i_first = maybestatic_first(idxs)
-    i_last = maybestatic_last(idxs)
     maybestatic_view(A, i_first, i_first + n - one(n)),
-    maybestatic_view(A, i_first + n, i_last)
+    maybestatic_view(A, i_first + n, maybestatic_last(idxs))
 end
+
+@noinline _throw_split_out_of_range(n, len) =
+    throw(ArgumentError("Can't split after $n of $len elements"))
 
 
 """
