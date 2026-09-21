@@ -446,6 +446,27 @@ end
     @test @inferred(all_leading_dims(SB, static(3))) === all(B)
     @test @inferred(all_leading_dims(B, static(2))) ==
           dropdims(all(B, dims = (1, 2)), dims = (1, 2))
+
+    @test @inferred(all_leading_dims(B, static(0))) === B
+    @test @inferred(sum_leading_dims(bc, static(0))) === bc
+    for f in (sum_leading_dims, drop_leading_dims, merge_leading_dims), n in (-1, 4)
+        @test_throws DimensionMismatch f(A, static(n))
+        @test_throws DimensionMismatch f(SA, static(n))
+    end
+    for n in (-1, 4)
+        @test_throws DimensionMismatch all_leading_dims(B, static(n))
+        @test_throws DimensionMismatch all_leading_dims(SB, static(n))
+        @test_throws DimensionMismatch sum_leading_dims(bc, static(n))
+    end
+
+    # Only dimensions of size one can be dropped, even if the length allows it:
+    @test_throws ArgumentError drop_leading_dims(zeros(2, 0), static(1))
+    @test_throws ArgumentError drop_leading_dims(SArray{Tuple{2,0},Float64}(), static(1))
+
+    @test @inferred(sum_leading_dims(zeros(0, 3), static(1))) == zeros(3)
+    @test @inferred(sum_leading_dims(Fill(2.0, 2, 3), static(1))) == fill(4.0, 3)
+    bc0 = Broadcast.instantiate(Broadcast.broadcasted(+, zeros(0, 3), 1))
+    @test @inferred(sum_leading_dims(bc0, static(2))) === 0.0
 end
 
 

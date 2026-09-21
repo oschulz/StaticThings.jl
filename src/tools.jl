@@ -546,25 +546,34 @@ end
 # Dimensions of an array as a tuple of dynamic or static integers:
 @inline _dims_of(A) = size_dims(maybestatic_size(A))
 
-@noinline _throw_too_few_dims(n, N) =
+@inline function _check_leading_dims(A, ::StaticInteger{N}) where {N}
+    0 <= N <= ndims(A) || _throw_leading_dims(ndims(A), N)
+    return nothing
+end
+
+@noinline _throw_leading_dims(n, N) =
     throw(DimensionMismatch("Can't operate on the $N leading dimensions of a $n-dimensional object"))
 
 
 """
     drop_leading_dims(A::AbstractArray, ::StaticInteger{N})
 
-Drop the `N` leading (singleton) dimensions of `A`.
+Drop the `N` leading dimensions of `A`, which must be of size one.
 
 Reshaping instead of `dropdims` keeps static arrays static and infers.
 """
 function drop_leading_dims end
 export drop_leading_dims
 
-@inline function drop_leading_dims(A::AbstractArray, ::StaticInteger{N}) where {N}
+@inline function drop_leading_dims(A::AbstractArray, n::StaticInteger{N}) where {N}
+    _check_leading_dims(A, n)
     dims = _dims_of(A)
-    length(dims) >= N || _throw_too_few_dims(length(dims), N)
-    maybestatic_reshape(A, ntuple(i -> dims[N+i], Val(length(dims) - N)))
+    all(==(1), ntuple(i -> dims[i], Val(N))) || _throw_dropped_dims()
+    maybestatic_reshape(A, ntuple(i -> dims[N+i], Val(ndims(A) - N)))
 end
+
+@noinline _throw_dropped_dims() =
+    throw(ArgumentError("Dropped leading dimensions must all be of size one"))
 
 
 """
@@ -580,12 +589,34 @@ export merge_leading_dims
 @inline merge_leading_dims(A::AbstractArray, ::StaticInteger{0}) =
     maybestatic_reshape(A, (static(1), _dims_of(A)...))
 
-@inline function merge_leading_dims(A::AbstractArray, ::StaticInteger{N}) where {N}
+@inline function merge_leading_dims(A::AbstractArray, n::StaticInteger{N}) where {N}
+    _check_leading_dims(A, n)
     dims = _dims_of(A)
-    length(dims) >= N || _throw_too_few_dims(length(dims), N)
     lead = ntuple(i -> dims[i], Val(N))
-    maybestatic_reshape(A, (prod(lead), ntuple(i -> dims[N+i], Val(length(dims) - N))...))
+    maybestatic_reshape(A, (prod(lead), ntuple(i -> dims[N+i], Val(ndims(A) - N))...))
 end
+
+
+# Reduce `A` over its `N` leading dimensions, `red(A)` reduces over all
+# dimensions, `red(A; dims)` over the given ones:
+@inline function _reduce_leading_dims(red::F, A, n::StaticInteger{N}) where {F,N}
+    _check_leading_dims(A, n)
+    if N == 0
+        A
+    elseif N == ndims(A)
+        red(A)
+    else
+        drop_leading_dims(_reduce_dims(red, A, n), n)
+    end
+end
+
+@inline _reduce_dims(red::F, A::AbstractArray, ::StaticInteger{N}) where {F,N} =
+    red(A; dims = ntuple(identity, Val(N)))
+
+# StaticArrays only reduces over a single dimension at a time:
+@inline _reduce_dims(::F, A::StaticArray, ::StaticInteger{0}) where {F} = A
+@inline _reduce_dims(red::F, A::StaticArray, ::StaticInteger{N}) where {F,N} =
+    _reduce_dims(red, red(A; dims = N), static(N - 1))
 
 
 """
@@ -599,20 +630,7 @@ are none. Static arrays stay static.
 function all_leading_dims end
 export all_leading_dims
 
-@inline all_leading_dims(A::AbstractArray{Bool,N}, ::StaticInteger{N}) where {N} = all(A)
-@inline function all_leading_dims(A::AbstractArray{Bool}, ::StaticInteger{N}) where {N}
-    drop_leading_dims(all(A; dims = ntuple(identity, Val(N))), static(N))
-end
-
-# StaticArrays only reduces over a single dimension at a time:
-@inline all_leading_dims(A::StaticArray{<:Any,Bool,N}, ::StaticInteger{N}) where {N} = all(A)
-@inline function all_leading_dims(A::StaticArray{<:Any,Bool}, ::StaticInteger{N}) where {N}
-    drop_leading_dims(_all_dims_seq(A, static(N)), static(N))
-end
-
-@inline _all_dims_seq(A::AbstractArray, ::StaticInteger{0}) = A
-@inline _all_dims_seq(A::AbstractArray, ::StaticInteger{N}) where {N} =
-    _all_dims_seq(all(A; dims = N), static(N - 1))
+@inline all_leading_dims(A::AbstractArray{Bool}, n::StaticInteger) = _reduce_leading_dims(all, A, n)
 
 
 """
@@ -627,39 +645,26 @@ materialization where their style supports it.
 function sum_leading_dims end
 export sum_leading_dims
 
-@inline sum_leading_dims(x::Number, ::StaticInteger{0}) = x
-@noinline sum_leading_dims(::Number, ::StaticInteger{N}) where {N} = _throw_too_few_dims(0, N)
+@inline sum_leading_dims(A::Union{Number,AbstractArray}, n::StaticInteger) =
+    _reduce_leading_dims(sum, A, n)
 
-@inline sum_leading_dims(A::AbstractArray, n::StaticInteger) =
-    _sum_leading_dims_impl(A, n, static(ndims(A)))
-
-@inline _sum_leading_dims_impl(A::AbstractArray, ::StaticInteger{0}, ::StaticInteger) = A
-@inline _sum_leading_dims_impl(A::AbstractArray, ::StaticInteger{0}, ::StaticInteger{0}) = A
-@inline _sum_leading_dims_impl(A::AbstractArray, ::StaticInteger{N}, ::StaticInteger{N}) where {N} = sum(A)
-@inline function _sum_leading_dims_impl(A::AbstractArray, ::StaticInteger{N}, ::StaticInteger) where {N}
-    drop_leading_dims(_sum_dims_seq(A, static(N)), static(N))
+@inline function sum_leading_dims(bc::Broadcast.Broadcasted, n::StaticInteger{N}) where {N}
+    _check_leading_dims(bc, n)
+    if N == 0
+        bc
+    elseif N == ndims(bc)
+        _sum_broadcast(bc)
+    else
+        sum_leading_dims(copy(bc), n)
+    end
 end
-
-@inline _sum_dims_seq(A::AbstractArray, ::StaticInteger{0}) = A
-@inline _sum_dims_seq(A::AbstractArray, ::StaticInteger{N}) where {N} =
-    _sum_dims_seq(sum(A; dims = N), static(N - 1))
 
 # Broadcast styles whose lazy reductions work without materialization:
 const _EagerReducibleBroadcast = Broadcast.Broadcasted{
     <:Union{Broadcast.DefaultArrayStyle,StaticArrays.StaticArrayStyle},
 }
 
-@inline sum_leading_dims(bc::Broadcast.Broadcasted, n::StaticInteger) =
-    _sum_leading_dims_lazy(bc, n, static(ndims(bc)))
-
-@inline _sum_leading_dims_lazy(bc::Broadcast.Broadcasted, ::StaticInteger{0}, ::StaticInteger) = bc
-@inline _sum_leading_dims_lazy(bc::Broadcast.Broadcasted, ::StaticInteger{0}, ::StaticInteger{0}) = bc
-@inline _sum_leading_dims_lazy(bc::_EagerReducibleBroadcast, ::StaticInteger{0}, ::StaticInteger{0}) = bc
-@inline function _sum_leading_dims_lazy(bc::_EagerReducibleBroadcast, ::StaticInteger{N}, ::StaticInteger{N}) where {N}
-    # An empty broadcast has no neutral element to start from, the empty
-    # array it materializes to has one:
-    length(bc) == 0 ? sum(copy(bc)) : sum(bc)
-end
-@inline _sum_leading_dims_lazy(bc::Broadcast.Broadcasted, ::StaticInteger{N}, ::StaticInteger{N}) where {N} = sum(copy(bc))
-@inline _sum_leading_dims_lazy(bc::Broadcast.Broadcasted, n::StaticInteger, ::StaticInteger) =
-    sum_leading_dims(copy(bc), n)
+# An empty broadcast has no neutral element to start from, the empty array
+# it materializes to has one:
+@inline _sum_broadcast(bc::_EagerReducibleBroadcast) = length(bc) == 0 ? sum(copy(bc)) : sum(bc)
+@inline _sum_broadcast(bc::Broadcast.Broadcasted) = sum(copy(bc))
