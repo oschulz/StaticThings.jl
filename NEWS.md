@@ -13,7 +13,7 @@ Breaking:
 New:
 
 * `size_dims(sz)`, the inverse of `canonical_size`, and a type-level
-  `axes2size(::Type{<:Tuple{Vararg{StaticOneToLike}}})`.
+  `axes2size(::Type{<:NTuple{N,StaticUnitRangeLike}})`.
 * `static_mapreduce(f, op, T)`, `static_reduce(op, T)`, `static_all(f, T)`
   and `static_any(f, T)`, pairwise folds over the element types of a tuple
   type that infer as compile-time constants.

@@ -474,4 +474,11 @@ end
           StaticArrays.Size(2, 3)
     @test @inferred(axes2size(typeof((StaticOneTo(2),)))) === StaticArrays.Size(2)
     @test_throws MethodError axes2size(Tuple{Vararg{StaticOneTo{2}}})
+
+    for axs in (
+        (StaticUnitRange(2, 4), static(0):static(1), StaticOneTo(2)),
+        (static(3):static(2), StaticUnitRange(3, 2)),
+    )
+        @test @inferred(axes2size(typeof(axs))) === axes2size(axs)
+    end
 end
