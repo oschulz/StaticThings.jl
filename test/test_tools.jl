@@ -159,19 +159,20 @@ using StaticArrays: SArray, SVector
     rshpFA = Fill(v, sz)
     rshpSA = SArray{Tuple{sz...},T}(A)
 
+    # Only static arrays become static arrays, other arrays keep their type:
     @test @inferred(maybestatic_reshape(A, sz)) == rshpA
     @test typeof(maybestatic_reshape(A, sz)) == typeof(rshpA)
     @test @inferred(maybestatic_reshape(A, sasz)) == rshpA
-    @test maybestatic_reshape(A, sasz) isa SArray
+    @test typeof(maybestatic_reshape(A, sasz)) == typeof(rshpA)
     @test @inferred(maybestatic_reshape(A, sisz)) == rshpA
-    @test maybestatic_reshape(A, sisz) isa SArray
+    @test typeof(maybestatic_reshape(A, sisz)) == typeof(rshpA)
 
     @test @inferred(maybestatic_reshape(FA, sz)) == rshpFA
     @test typeof(maybestatic_reshape(FA, sz)) == typeof(rshpFA)
     @test @inferred(maybestatic_reshape(FA, sasz)) == rshpFA
-    @test maybestatic_reshape(FA, sasz) isa SArray
+    @test typeof(maybestatic_reshape(FA, sasz)) == typeof(rshpFA)
     @test @inferred(maybestatic_reshape(FA, sisz)) == rshpFA
-    @test maybestatic_reshape(FA, sisz) isa SArray
+    @test typeof(maybestatic_reshape(FA, sisz)) == typeof(rshpFA)
 
     @test @inferred(maybestatic_reshape(SA, sz)) == rshpA
     @test maybestatic_reshape(SA, sz) isa Base.ReshapedArray{T,3,<:SVector}
@@ -179,7 +180,14 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_reshape(SA, sisz)) === rshpSA
 
     @test @inferred(maybestatic_reshape(SVector(v), ())) === SArray{Tuple{},T,0,1}(v)
-    @test @inferred(maybestatic_reshape([v], ())) === SArray{Tuple{},T,0,1}(v)
+    @test @inferred(maybestatic_reshape([v], ())) == fill(v)
+    @test typeof(maybestatic_reshape([v], ())) == typeof(fill(v))
+
+    @test @inferred(size_dims(sz)) === sz
+    @test @inferred(size_dims(sasz)) === sisz
+    @test @inferred(size_dims(sisz)) === sisz
+    @test @inferred(size_dims(())) === ()
+    @test @inferred(canonical_size(size_dims(sasz))) === sasz
 
     @test @inferred(maybestatic_length(5)) === static(1)
     @test @inferred(maybestatic_length(())) === static(0)
@@ -351,4 +359,112 @@ using StaticArrays: SArray, SVector
     @test @inferred(size_from_type(eltype(A))) === maybestatic_size(A[1])
     @test @inferred(size_from_type(typeof(A))) === NoTypeSize{typeof(A)}()
     @test @inferred(size_from_type(String)) === NoTypeSize{String}()
+end
+
+
+@testset "static type reductions" begin
+    @test @inferred(static_all(T -> T <: Integer, Tuple{})) === static(true)
+    @test @inferred(static_all(T -> T <: Integer, Tuple{Int,Bool})) === static(true)
+    @test @inferred(static_all(T -> T <: Integer, Tuple{Int,Float64})) === static(false)
+    @test @inferred(static_all(T -> static(T <: Integer), Tuple{Int,Bool})) === static(true)
+
+    @test @inferred(static_any(T -> T <: Integer, Tuple{})) === static(false)
+    @test @inferred(static_any(T -> T <: Integer, Tuple{Float64,Bool})) === static(true)
+    @test @inferred(static_any(T -> T <: Integer, Tuple{Float64,String})) === static(false)
+
+    @test @inferred(static_mapreduce(sizeof, +, Tuple{Int32,Int64,Int16})) === 14
+    @test @inferred(static_reduce(promote_type, Tuple{Int,Float32})) === Float32
+    @test @inferred(static_reduce(promote_type, Tuple{Int})) === Int
+    @test @inferred(static_mapreduce(T -> static(T <: Integer), &, Tuple{Int,Bool})) ===
+          static(true)
+    @test_throws ArgumentError static_reduce(+, Tuple{})
+    @test_throws ArgumentError static_mapreduce(sizeof, +, Tuple{})
+
+    # The results must be constants, not just inferred:
+    f_all() = static_all(T -> T <: Integer, Tuple{Int,Bool,Float64})
+    f_any() = static_any(T -> T <: Integer, Tuple{Float64,Bool})
+    f_red() = static_mapreduce(T -> static(sizeof(T)), +, Tuple{Int32,Int64})
+    @test @inferred(Static.False, f_all()) === static(false)
+    @test @inferred(Static.True, f_any()) === static(true)
+    @test @inferred(Static.StaticInt{12}, f_red()) === static(12)
+end
+
+
+@testset "leading dimensions" begin
+    A = rand(2, 3, 4)
+    SA = SArray{Tuple{2,3,4}}(A)
+
+    @test @inferred(sum_leading_dims(4.2, static(0))) === 4.2
+    @test_throws DimensionMismatch sum_leading_dims(4.2, static(1))
+
+    @test @inferred(sum_leading_dims(A, static(0))) === A
+    @test @inferred(sum_leading_dims(A, static(1))) ≈ dropdims(sum(A, dims = 1), dims = 1)
+    @test @inferred(sum_leading_dims(A, static(2))) ≈
+          dropdims(sum(A, dims = (1, 2)), dims = (1, 2))
+    @test @inferred(sum_leading_dims(A, static(3))) ≈ sum(A)
+
+    @test @inferred(sum_leading_dims(SA, static(1))) isa SArray{Tuple{3,4}}
+    @test @inferred(sum_leading_dims(SA, static(1))) ≈ sum_leading_dims(A, static(1))
+    @test @inferred(sum_leading_dims(SA, static(3))) ≈ sum(A)
+
+    bc = Broadcast.instantiate(Broadcast.broadcasted(+, A, 1))
+    @test @inferred(sum_leading_dims(bc, static(3))) ≈ sum(A .+ 1)
+    @test @inferred(sum_leading_dims(bc, static(1))) ≈ sum_leading_dims(A .+ 1, static(1))
+    sbc = Broadcast.instantiate(Broadcast.broadcasted(+, SA, 1))
+    @test @inferred(sum_leading_dims(sbc, static(3))) ≈ sum(A .+ 1)
+
+    @test @inferred(drop_leading_dims(reshape(A, 1, 1, 2, 3, 4), static(2))) == A
+    @test @inferred(drop_leading_dims(SArray{Tuple{1,3,4}}(A[1:1, :, :]), static(1))) isa
+          SArray{Tuple{3,4}}
+    @test_throws DimensionMismatch drop_leading_dims(A, static(4))
+
+    @test @inferred(merge_leading_dims(A, static(0))) == reshape(A, 1, 2, 3, 4)
+    @test @inferred(merge_leading_dims(A, static(2))) == reshape(A, 6, 4)
+    @test @inferred(merge_leading_dims(SA, static(2))) isa SArray{Tuple{6,4}}
+    @test @inferred(merge_leading_dims(SA, static(0))) isa SArray{Tuple{1,2,3,4}}
+    @test @inferred(merge_leading_dims(A, static(3))) == reshape(A, 24)
+
+    B = A .> 0.5
+    SB = SA .> 0.5
+    @test @inferred(all_leading_dims(B, static(3))) === all(B)
+    @test @inferred(all_leading_dims(B, static(1))) ==
+          dropdims(all(B, dims = 1), dims = 1)
+    @test @inferred(all_leading_dims(SB, static(1))) isa SArray{Tuple{3,4},Bool}
+    @test all_leading_dims(SB, static(1)) == all_leading_dims(B, static(1))
+    @test @inferred(all_leading_dims(SB, static(3))) === all(B)
+    @test @inferred(all_leading_dims(B, static(2))) ==
+          dropdims(all(B, dims = (1, 2)), dims = (1, 2))
+end
+
+
+@testset "vector splitting" begin
+    A = rand(6)
+    SA = SVector{6}(A)
+    tpl = Tuple(A)
+
+    @test @inferred(maybestatic_view(A, 2, 4)) == A[2:4]
+    @test @inferred(maybestatic_view(A, 2, 4)) isa SubArray
+    @test @inferred(maybestatic_view(SA, static(2), static(4))) === SVector{3}(A[2:4])
+    @test @inferred(maybestatic_view(tpl, static(2), static(4))) === Tuple(A[2:4])
+
+    @test @inferred(maybestatic_view(A, 2:4)) == A[2:4]
+    @test @inferred(maybestatic_view(SA, StaticOneTo(4))) === SVector{4}(A[1:4])
+    @test @inferred(maybestatic_view(tpl, static(2):static(4))) === Tuple(A[2:4])
+
+    a, b = @inferred split_at(A, 2)
+    @test a == A[1:2] && b == A[3:6]
+    sa, sb = @inferred split_at(SA, static(2))
+    @test sa === SVector{2}(A[1:2]) && sb === SVector{4}(A[3:6])
+    sa0, sb0 = @inferred split_at(SA, static(0))
+    @test sa0 === SVector{0,Float64}() && sb0 === SA
+end
+
+
+@testset "type-level axes2size" begin
+    @test @inferred(axes2size(Tuple{})) === StaticArrays.Size()
+    @test @inferred(axes2size(typeof((StaticOneTo(2), StaticOneTo(3))))) ===
+          StaticArrays.Size(2, 3)
+    @test @inferred(axes2size(typeof((Static.SOneTo(2), StaticOneTo(3))))) ===
+          StaticArrays.Size(2, 3)
+    @test @inferred(axes2size(typeof((StaticOneTo(2),)))) === StaticArrays.Size(2)
 end
