@@ -15,6 +15,13 @@ import StaticArrays
 using StaticArrays: SArray, SVector, MVector, SizedVector, StaticVector
 
 
+struct TestPoint3 <: StaticArrays.FieldVector{3,Float64}
+    x::Float64
+    y::Float64
+    z::Float64
+end
+
+
 @testset "satools" begin
     v = 4.2
     sv = static(4.2)
@@ -507,6 +514,14 @@ end
     @test @inferred(maybestatic_view(SA, static(3):static(2))) === SVector{0,Float64}()
     @test @inferred(maybestatic_view(SA, static(5), static(2))) === SVector{0,Float64}()
     @test @inferred(maybestatic_view(tpl, static(5), static(2))) === ()
+
+    @test @inferred(maybestatic_view(SA, StaticUnitRange(2, 4))) === SVector{3}(A[2:4])
+    @test @inferred(maybestatic_view(tpl, StaticUnitRange(2, 4))) === Tuple(A[2:4])
+
+    # Immutable static vectors give static vectors:
+    @test @inferred(maybestatic_view(TestPoint3(1, 2, 3), static(2), static(3))) ===
+          SVector(2.0, 3.0)
+    @test @inferred(maybestatic_view(StaticUnitRange(3, 8), static(2), static(3))) === SVector(4, 5)
 
     # Views of mutable static vectors share their memory:
     for MA in (MVector{6}(A), SizedVector{6}(copy(A)))

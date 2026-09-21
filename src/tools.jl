@@ -417,14 +417,15 @@ end
 A view of the vector or tuple `A` over the index range `r`, resp. from index
 `from` to index `until`.
 
-Static vectors give statically sized results for static indices, as
-StaticArrays' `view` does: a static vector if `A` is immutable, a statically
-sized view otherwise. Tuples give tuples, other vectors a `view`.
+Static vectors of a bits type give static vectors for static indices,
+copies can't be told apart from views for them. Other static vectors give
+StaticArrays' `view`, which is statically sized for `MArray`s and
+`SizedArray`s. Tuples give tuples, other vectors a `view`.
 """
 function maybestatic_view end
 export maybestatic_view
 
-Base.@propagate_inbounds maybestatic_view(A, r::AbstractUnitRange) =
+Base.@propagate_inbounds maybestatic_view(A, r::Union{AbstractUnitRange,StaticUnitRangeLike}) =
     maybestatic_view(A, maybestatic_first(r), maybestatic_last(r))
 
 Base.@propagate_inbounds function maybestatic_view(
@@ -440,7 +441,12 @@ Base.@propagate_inbounds function maybestatic_view(
     ::StaticInteger{F},
     ::StaticInteger{U},
 ) where {F,U}
-    view(A, StaticUnitRange(F, U))
+    if isbitstype(typeof(A))
+        L = max(0, U - F + 1)
+        SVector{L,eltype(A)}(ntuple(i -> A[F+i-1], Val(L)))
+    else
+        view(A, StaticUnitRange(F, U))
+    end
 end
 
 Base.@propagate_inbounds function maybestatic_view(
