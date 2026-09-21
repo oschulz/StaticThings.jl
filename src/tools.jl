@@ -98,8 +98,9 @@ end
 Reshapes array `A` to size `sz`.
 
 If `A` is a static array and `sz` is static, the result is a static array.
-Other arrays are reshaped to the non-static size, so that device arrays and
-traced arrays keep their type.
+Other arrays are reshaped with the non-static size instead of being
+converted to an `SArray`. Like with `reshape`, the result shares the memory
+of a mutable `A`.
 """
 function maybestatic_reshape end
 export maybestatic_reshape
