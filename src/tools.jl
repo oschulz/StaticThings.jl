@@ -571,6 +571,12 @@ export all_leading_dims
 
 @inline all_leading_dims(A::AbstractArray{Bool,N}, ::StaticInteger{N}) where {N} = all(A)
 @inline function all_leading_dims(A::AbstractArray{Bool}, ::StaticInteger{N}) where {N}
+    drop_leading_dims(all(A; dims = ntuple(identity, Val(N))), static(N))
+end
+
+# StaticArrays only reduces over a single dimension at a time:
+@inline all_leading_dims(A::StaticArray{<:Any,Bool,N}, ::StaticInteger{N}) where {N} = all(A)
+@inline function all_leading_dims(A::StaticArray{<:Any,Bool}, ::StaticInteger{N}) where {N}
     drop_leading_dims(_all_dims_seq(A, static(N)), static(N))
 end
 
@@ -620,6 +626,8 @@ const _EagerReducibleBroadcast = Broadcast.Broadcasted{
 @inline _sum_leading_dims_lazy(bc::Broadcast.Broadcasted, ::StaticInteger{0}, ::StaticInteger{0}) = bc
 @inline _sum_leading_dims_lazy(bc::_EagerReducibleBroadcast, ::StaticInteger{0}, ::StaticInteger{0}) = bc
 @inline function _sum_leading_dims_lazy(bc::_EagerReducibleBroadcast, ::StaticInteger{N}, ::StaticInteger{N}) where {N}
+    # An empty broadcast has no neutral element to start from, the empty
+    # array it materializes to has one:
     length(bc) == 0 ? sum(copy(bc)) : sum(bc)
 end
 @inline _sum_leading_dims_lazy(bc::Broadcast.Broadcasted, ::StaticInteger{N}, ::StaticInteger{N}) where {N} = sum(copy(bc))
