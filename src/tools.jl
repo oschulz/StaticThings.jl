@@ -404,16 +404,20 @@ end
 
 
 """
-    maybestatic_view(A::AbstractVector, from::IntegerLike, until::IntegerLike)
-    maybestatic_view(tpl::Tuple, from::IntegerLike, until::IntegerLike)
+    maybestatic_view(A, r::AbstractUnitRange)
+    maybestatic_view(A, from::IntegerLike, until::IntegerLike)
 
-The elements of `A` from index `from` to index `until`.
+The elements of the vector or tuple `A` over the index range `r`, resp.
+from index `from` to index `until`.
 
 Static vectors and tuples give static results for static indices, other
 vectors give a `view`.
 """
 function maybestatic_view end
 export maybestatic_view
+
+Base.@propagate_inbounds maybestatic_view(A, r::AbstractUnitRange) =
+    maybestatic_view(A, maybestatic_first(r), maybestatic_last(r))
 
 Base.@propagate_inbounds function maybestatic_view(
     A::AbstractVector,
@@ -460,23 +464,36 @@ end
 
 
 """
-    static_reduce(op, ::Type{<:Tuple})
-    static_reduce(op, f, ::Type{<:Tuple})
+    static_mapreduce(f, op, ::Type{<:Tuple})
 
-Reduce the element types of a tuple type with `op`, applying `f` to each
-element type first.
+Reduce `f` of the element types of a tuple type with `op`.
 
 Folded pairwise from the right, so that the result is a compile-time
-constant where `reduce` over a tuple of values isn't (Julia 1.10).
+constant where `mapreduce` over a tuple of values isn't (Julia 1.10).
+Empty tuple types have no result, pass an `init` to `op` yourself.
+"""
+function static_mapreduce end
+export static_mapreduce
+
+@inline static_mapreduce(f::F, ::OP, ::Type{Tuple{T}}) where {F,OP,T} = f(T)
+@inline function static_mapreduce(f::F, op::OP, ::Type{T}) where {F,OP,T<:Tuple}
+    op(f(Base.tuple_type_head(T)), static_mapreduce(f, op, Base.tuple_type_tail(T)))
+end
+@noinline static_mapreduce(::F, ::OP, ::Type{Tuple{}}) where {F,OP} =
+    throw(ArgumentError("Can't reduce over the element types of an empty tuple type"))
+
+
+"""
+    static_reduce(op, ::Type{<:Tuple})
+
+Reduce the element types of a tuple type with `op`.
+
+The `f = identity` case of [`static_mapreduce`](@ref).
 """
 function static_reduce end
 export static_reduce
 
-@inline static_reduce(op::OP, ::Type{T}) where {OP,T<:Tuple} = static_reduce(op, identity, T)
-@inline static_reduce(op::OP, f::F, ::Type{Tuple{T}}) where {OP,F,T} = f(T)
-@inline function static_reduce(op::OP, f::F, ::Type{T}) where {OP,F,T<:Tuple}
-    op(f(Base.tuple_type_head(T)), static_reduce(op, f, Base.tuple_type_tail(T)))
-end
+@inline static_reduce(op::OP, ::Type{T}) where {OP,T<:Tuple} = static_mapreduce(identity, op, T)
 
 
 """

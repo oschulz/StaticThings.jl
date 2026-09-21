@@ -372,15 +372,18 @@ end
     @test @inferred(static_any(T -> T <: Integer, Tuple{Float64,Bool})) === static(true)
     @test @inferred(static_any(T -> T <: Integer, Tuple{Float64,String})) === static(false)
 
-    @test @inferred(static_reduce(+, sizeof, Tuple{Int32,Int64,Int16})) === 14
+    @test @inferred(static_mapreduce(sizeof, +, Tuple{Int32,Int64,Int16})) === 14
     @test @inferred(static_reduce(promote_type, Tuple{Int,Float32})) === Float32
-    @test @inferred(static_reduce(&, T -> static(T <: Integer), Tuple{Int,Bool})) ===
+    @test @inferred(static_reduce(promote_type, Tuple{Int})) === Int
+    @test @inferred(static_mapreduce(T -> static(T <: Integer), &, Tuple{Int,Bool})) ===
           static(true)
+    @test_throws ArgumentError static_reduce(+, Tuple{})
+    @test_throws ArgumentError static_mapreduce(sizeof, +, Tuple{})
 
     # The results must be constants, not just inferred:
     f_all() = static_all(T -> T <: Integer, Tuple{Int,Bool,Float64})
     f_any() = static_any(T -> T <: Integer, Tuple{Float64,Bool})
-    f_red() = static_reduce(+, T -> static(sizeof(T)), Tuple{Int32,Int64})
+    f_red() = static_mapreduce(T -> static(sizeof(T)), +, Tuple{Int32,Int64})
     @test @inferred(Static.False, f_all()) === static(false)
     @test @inferred(Static.True, f_any()) === static(true)
     @test @inferred(Static.StaticInt{12}, f_red()) === static(12)
@@ -428,6 +431,9 @@ end
           dropdims(all(B, dims = 1), dims = 1)
     @test @inferred(all_leading_dims(SB, static(1))) isa SArray{Tuple{3,4},Bool}
     @test all_leading_dims(SB, static(1)) == all_leading_dims(B, static(1))
+    @test @inferred(all_leading_dims(SB, static(3))) === all(B)
+    @test @inferred(all_leading_dims(B, static(2))) ==
+          dropdims(all(B, dims = (1, 2)), dims = (1, 2))
 end
 
 
@@ -440,6 +446,10 @@ end
     @test @inferred(maybestatic_view(A, 2, 4)) isa SubArray
     @test @inferred(maybestatic_view(SA, static(2), static(4))) === SVector{3}(A[2:4])
     @test @inferred(maybestatic_view(tpl, static(2), static(4))) === Tuple(A[2:4])
+
+    @test @inferred(maybestatic_view(A, 2:4)) == A[2:4]
+    @test @inferred(maybestatic_view(SA, StaticOneTo(4))) === SVector{4}(A[1:4])
+    @test @inferred(maybestatic_view(tpl, static(2):static(4))) === Tuple(A[2:4])
 
     a, b = @inferred split_at(A, 2)
     @test a == A[1:2] && b == A[3:6]
