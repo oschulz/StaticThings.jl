@@ -166,7 +166,7 @@ export maybestatic_axes
 
 """
     StaticThings.axes2size(axs::AxesLike)
-    StaticThings.axes2size(::Type{<:Tuple{Vararg{StaticOneToLike}}})
+    StaticThings.axes2size(::Type{<:NTuple{N,StaticOneToLike}})
 
 Get the size of a collection-like object from its axes.
 
@@ -179,7 +179,7 @@ export axes2size
 @inline axes2size(::Tuple{}) = ()
 @inline axes2size(axs::Tuple) = canonical_size(map(maybestatic_length, axs))
 
-@inline axes2size(::Type{A}) where {A<:Tuple{Vararg{StaticOneToLike}}} =
+@inline axes2size(::Type{A}) where {N,A<:NTuple{N,StaticOneToLike}} =
     canonical_size(_static_axes_lengths(A))
 
 @inline _static_axes_lengths(::Type{Tuple{}}) = ()
@@ -464,19 +464,19 @@ end
 
 
 """
-    static_mapreduce(f, op, ::Type{<:Tuple})
+    static_mapreduce(f, op, ::Type{<:NTuple{N,Any}})
 
-Reduce `f` of the element types of a tuple type with `op`.
+Reduce `f` of the element types of a fixed-length tuple type with `op`.
 
-Folded pairwise from the right, so that the result is a compile-time
-constant where `mapreduce` over a tuple of values isn't (Julia 1.10).
-Empty tuple types have no result, pass an `init` to `op` yourself.
+Folded recursively from the right, so that the result is a compile-time
+constant where `mapreduce` over a tuple of values isn't (Julia 1.10). Throws
+an `ArgumentError` for the empty tuple type.
 """
 function static_mapreduce end
 export static_mapreduce
 
 @inline static_mapreduce(f::F, ::OP, ::Type{Tuple{T}}) where {F,OP,T} = f(T)
-@inline function static_mapreduce(f::F, op::OP, ::Type{T}) where {F,OP,T<:Tuple}
+@inline function static_mapreduce(f::F, op::OP, ::Type{T}) where {F,OP,N,T<:NTuple{N,Any}}
     op(f(Base.tuple_type_head(T)), static_mapreduce(f, op, Base.tuple_type_tail(T)))
 end
 @noinline static_mapreduce(::F, ::OP, ::Type{Tuple{}}) where {F,OP} =
@@ -484,48 +484,49 @@ end
 
 
 """
-    static_reduce(op, ::Type{<:Tuple})
+    static_reduce(op, ::Type{<:NTuple{N,Any}})
 
-Reduce the element types of a tuple type with `op`.
+Reduce the element types of a fixed-length tuple type with `op`.
 
 The `f = identity` case of [`static_mapreduce`](@ref).
 """
 function static_reduce end
 export static_reduce
 
-@inline static_reduce(op::OP, ::Type{T}) where {OP,T<:Tuple} = static_mapreduce(identity, op, T)
+@inline static_reduce(op::OP, ::Type{T}) where {OP,N,T<:NTuple{N,Any}} =
+    static_mapreduce(identity, op, T)
 
 
 """
-    static_all(f, ::Type{<:Tuple})
+    static_all(f, ::Type{<:NTuple{N,Any}})
 
-Whether `f` holds for every element type of a tuple type.
+Whether `f` holds for every element type of a fixed-length tuple type.
 
-Returns `Static.True` or `Static.False`, folded pairwise so that the result
-is a compile-time constant where `all` isn't (Julia 1.10).
+Returns `Static.True` or `Static.False`, folded recursively so that the
+result is a compile-time constant where `all` isn't (Julia 1.10).
 """
 function static_all end
 export static_all
 
 @inline static_all(::F, ::Type{Tuple{}}) where {F} = static(true)
-@inline function static_all(f::F, ::Type{T}) where {F,T<:Tuple}
+@inline function static_all(f::F, ::Type{T}) where {F,N,T<:NTuple{N,Any}}
     static(f(Base.tuple_type_head(T))) & static_all(f, Base.tuple_type_tail(T))
 end
 
 
 """
-    static_any(f, ::Type{<:Tuple})
+    static_any(f, ::Type{<:NTuple{N,Any}})
 
-Whether `f` holds for any element type of a tuple type.
+Whether `f` holds for any element type of a fixed-length tuple type.
 
-Returns `Static.True` or `Static.False`, folded pairwise so that the result
-is a compile-time constant where `any` isn't (Julia 1.10).
+Returns `Static.True` or `Static.False`, folded recursively so that the
+result is a compile-time constant where `any` isn't (Julia 1.10).
 """
 function static_any end
 export static_any
 
 @inline static_any(::F, ::Type{Tuple{}}) where {F} = static(false)
-@inline function static_any(f::F, ::Type{T}) where {F,T<:Tuple}
+@inline function static_any(f::F, ::Type{T}) where {F,N,T<:NTuple{N,Any}}
     static(f(Base.tuple_type_head(T))) | static_any(f, Base.tuple_type_tail(T))
 end
 

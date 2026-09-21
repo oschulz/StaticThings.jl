@@ -380,6 +380,12 @@ end
     @test_throws ArgumentError static_reduce(+, Tuple{})
     @test_throws ArgumentError static_mapreduce(sizeof, +, Tuple{})
 
+    # Tuple types without a fixed length have no element types to fold over:
+    @test_throws MethodError static_all(T -> T <: Integer, Tuple{Vararg{Int}})
+    @test_throws MethodError static_any(T -> T <: Integer, Tuple{Int,Vararg{Int}})
+    @test_throws MethodError static_mapreduce(sizeof, +, Tuple)
+    @test_throws MethodError static_reduce(promote_type, Tuple{Vararg{Int}})
+
     # The results must be constants, not just inferred:
     f_all() = static_all(T -> T <: Integer, Tuple{Int,Bool,Float64})
     f_any() = static_any(T -> T <: Integer, Tuple{Float64,Bool})
@@ -467,4 +473,5 @@ end
     @test @inferred(axes2size(typeof((Static.SOneTo(2), StaticOneTo(3))))) ===
           StaticArrays.Size(2, 3)
     @test @inferred(axes2size(typeof((StaticOneTo(2),)))) === StaticArrays.Size(2)
+    @test_throws MethodError axes2size(Tuple{Vararg{StaticOneTo{2}}})
 end
