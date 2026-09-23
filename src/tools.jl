@@ -181,6 +181,7 @@ export axes2size
 @inline axes2size(::Tuple{}) = ()
 @inline axes2size(axs::Tuple) = canonical_size(map(maybestatic_length, axs))
 
+@inline axes2size(::Type{Tuple{}}) = ()
 @inline axes2size(::Type{A}) where {N,A<:NTuple{N,StaticUnitRangeLike}} =
     canonical_size(_static_axes_lengths(A))
 

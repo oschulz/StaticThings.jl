@@ -538,7 +538,7 @@ end
 
 
 @testset "type-level axes2size" begin
-    @test @inferred(axes2size(Tuple{})) === StaticArrays.Size()
+    @test @inferred(axes2size(Tuple{})) === ()
     @test @inferred(axes2size(typeof((StaticOneTo(2), StaticOneTo(3))))) ===
           StaticArrays.Size(2, 3)
     @test @inferred(axes2size(typeof((Static.SOneTo(2), StaticOneTo(3))))) ===
@@ -547,6 +547,7 @@ end
     @test_throws MethodError axes2size(Tuple{Vararg{StaticOneTo{2}}})
 
     for axs in (
+        (),
         (StaticUnitRange(2, 4), static(0):static(1), StaticOneTo(2)),
         (static(3):static(2), StaticUnitRange(3, 2)),
     )
