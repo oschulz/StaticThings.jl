@@ -5,5 +5,6 @@ import Test
 Test.@testset "Package StaticThings" begin
     include("test_aqua.jl")
     include("test_tools.jl")
+    include("test_gpuarrays.jl")
     include("test_docs.jl")
 end # testset
