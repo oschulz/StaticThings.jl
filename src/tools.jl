@@ -412,7 +412,7 @@ end
 
 
 """
-    maybestatic_view(A, r::AbstractUnitRange)
+    maybestatic_view(A, r::Union{AbstractUnitRange,StaticUnitRangeLike})
     maybestatic_view(A, from::IntegerLike, until::IntegerLike)
 
 A view of the vector or tuple `A` over the index range `r`, resp. from index
