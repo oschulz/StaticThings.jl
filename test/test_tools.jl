@@ -186,6 +186,13 @@ end
     @test @inferred(maybestatic_reshape(SA, sasz)) === rshpSA
     @test @inferred(maybestatic_reshape(SA, sisz)) === rshpSA
 
+    # Reshaping a mutable static array shares its memory:
+    for MA in (MVector{len}(A), SizedVector{len}(copy(A)))
+        R = maybestatic_reshape(MA, sasz)
+        MA[begin] = -v
+        @test R[begin, begin, begin] == -v
+    end
+
     @test @inferred(maybestatic_reshape(SVector(v), ())) === SArray{Tuple{},T,0,1}(v)
     @test @inferred(maybestatic_reshape([v], ())) == fill(v)
     @test typeof(maybestatic_reshape([v], ())) == typeof(fill(v))
@@ -516,6 +523,13 @@ end
     @test @inferred(maybestatic_view(SA, static(3):static(2))) === SVector{0,Float64}()
     @test @inferred(maybestatic_view(SA, static(5), static(2))) === SVector{0,Float64}()
     @test @inferred(maybestatic_view(tpl, static(5), static(2))) === ()
+
+    # Index types other than `Int` work, but only static ones give a `Val`:
+    WideInt = sizeof(Int) == 4 ? Int64 : Int128
+    for I in (Int32, WideInt, BigInt)
+        @test maybestatic_view((1, 2, 3), I(1), I(2)) === (1, 2)
+        @test split_at((1, 2, 3), I(1)) === ((1,), (2, 3))
+    end
 
     @test @inferred(maybestatic_view(SA, StaticUnitRange(2, 4))) === SVector{3}(A[2:4])
     @test @inferred(maybestatic_view(tpl, StaticUnitRange(2, 4))) === Tuple(A[2:4])

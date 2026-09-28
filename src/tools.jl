@@ -452,10 +452,20 @@ end
 
 Base.@propagate_inbounds function maybestatic_view(
     tpl::Tuple,
+    ::StaticInteger{F},
+    ::StaticInteger{U},
+) where {F,U}
+    ntuple(i -> tpl[F+i-1], Val(max(0, U - F + 1)))
+end
+
+Base.@propagate_inbounds function maybestatic_view(
+    tpl::Tuple,
     from::IntegerLike,
     until::IntegerLike,
 )
-    ntuple(i -> tpl[from+i-1], Val(dynamic(max(static(0), until - from + one(from)))))
+    # Only a statically known length can be a `Val`, and tuples are never
+    # longer than an `Int`:
+    ntuple(i -> tpl[from+i-1], Int(max(0, dynamic(until) - dynamic(from) + 1)))
 end
 
 
