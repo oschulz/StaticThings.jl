@@ -8,13 +8,15 @@ static and non-static values and arrays.
 """
 module StaticThings
 
+using Base: Broadcast
+
 using FillArrays: FillArrays, Fill
 
 using Static: Static, StaticInteger, static, dynamic
 
 using StaticArrayInterface: StaticArrayInterface
 
-using StaticArrays: StaticArrays, StaticArray, SArray, SVector
+using StaticArrays: StaticArrays, StaticArray, StaticVector, SArray, SVector
 
 include("aliases.jl")
 include("tools.jl")

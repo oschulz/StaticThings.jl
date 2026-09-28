@@ -93,22 +93,21 @@ end
 
 
 """
-    maybestatic_reshape(A, sz)
+    maybestatic_reshape(A, sz::SizeLike)
 
-Reshapes array `A` to sizes `sz`.
+Reshapes array `A` to size `sz`.
 
 If `A` is a static array and `sz` is static, the result is a static array.
+Other arrays are reshaped with the non-static size instead of being
+converted to an `SArray`. Like with `reshape`, the result shares the memory
+of a mutable `A`.
 """
 function maybestatic_reshape end
 export maybestatic_reshape
 
-maybestatic_reshape(A, sz) = reshape(A, canonical_size(sz))
-function maybestatic_reshape(A, sz::StaticSizeLike)
-    SArray(reshape(A, canonical_size(sz)))
-end
-function maybestatic_reshape(A::StaticArray, sz::Tuple{Vararg{StaticInteger}})
-    staticarray_type(eltype(A), canonical_size(sz))(Tuple(A))
-end
+@inline maybestatic_reshape(A, sz::SizeLike) = reshape(A, asnonstatic(sz))
+@inline maybestatic_reshape(A::StaticArray, sz::StaticSizeLike) =
+    reshape(A, canonical_size(sz))
 
 
 """
@@ -127,7 +126,8 @@ export maybestatic_length
 @static if isdefined(StaticArrays, :SUnitRange)
     @inline maybestatic_length(r::StaticArrays.SUnitRange) = maybestatic_last(r) - maybestatic_first(r) + static(1)
 end
-@inline maybestatic_length(r::AbstractUnitRange) = maybestatic_last(r) - maybestatic_first(r) + static(1)
+@inline maybestatic_length(r::AbstractUnitRange) =
+    max(static(0), maybestatic_last(r) - maybestatic_first(r) + static(1))
 @inline maybestatic_length(r::Base.OneTo) = length(r)
 @inline maybestatic_length(::StaticArrays.SOneTo{N}) where {N} = static(N)
 @inline maybestatic_length(::Static.SOneTo{N}) where {N} = static(N)
@@ -167,16 +167,35 @@ export maybestatic_axes
 
 
 """
-    StaticThings.axes2size(x::Tuple)
-    StaticThings.axes2size(x::StaticArrays.Size)
+    StaticThings.axes2size(axs::AxesLike)
+    StaticThings.axes2size(::Type{<:NTuple{N,StaticUnitRangeLike}})
 
 Get the size of a collection-like object from its axes.
+
+The type-level form gives the size of collections with statically sized
+axes without an instance at hand.
 """
 function axes2size end
 export axes2size
 
 @inline axes2size(::Tuple{}) = ()
 @inline axes2size(axs::Tuple) = canonical_size(map(maybestatic_length, axs))
+
+@inline axes2size(::Type{Tuple{}}) = ()
+@inline axes2size(::Type{A}) where {N,A<:NTuple{N,StaticUnitRangeLike}} =
+    canonical_size(_static_axes_lengths(A))
+
+@inline _static_axes_lengths(::Type{Tuple{}}) = ()
+@inline _static_axes_lengths(::Type{A}) where {A<:Tuple} = (
+    _static_range_length(Base.tuple_type_head(A)),
+    _static_axes_lengths(Base.tuple_type_tail(A))...,
+)
+
+@inline _static_range_length(::Type{<:StaticArrays.SOneTo{N}}) where {N} = static(N)
+@static if isdefined(StaticArrays, :SUnitRange)
+    @inline _static_range_length(::Type{<:StaticArrays.SUnitRange{B,L}}) where {B,L} = static(L)
+end
+@inline _static_range_length(::Type{<:Static.SUnitRange{F,L}}) where {F,L} = static(max(0, L - F + 1))
 
 
 """
@@ -254,6 +273,7 @@ maybestatic_first(x::Number) = x
 maybestatic_first(tpl::Tuple) = tpl[begin]
 maybestatic_first(nt::NamedTuple) = nt[begin]
 maybestatic_first(A::AbstractArray) = A[begin]
+maybestatic_first(r::AbstractRange) = first(r)
 maybestatic_first(::Base.OneTo) = static(1)
 maybestatic_first(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[begin])
 maybestatic_first(::StaticArrays.SOneTo{N}) where {N} = static(1)
@@ -279,6 +299,7 @@ maybestatic_last(x::Number) = x
 maybestatic_last(tpl::Tuple) = tpl[end]
 maybestatic_last(nt::NamedTuple) = nt[end]
 maybestatic_last(A::AbstractArray) = A[end]
+maybestatic_last(r::AbstractRange) = last(r)
 maybestatic_last(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[end])
 maybestatic_last(::StaticArrays.SOneTo{N}) where {N} = static(N)
 @static if isdefined(StaticArrays, :SUnitRange)
@@ -323,6 +344,21 @@ export canonical_size
 @inline canonical_size(sz::SizeLike) = sz
 @inline canonical_size(sz::Tuple{Vararg{Static.StaticInteger}}) =
     StaticArrays.Size{map(dynamic, sz)}()
+
+
+"""
+    size_dims(sz::SizeLike)::Tuple{Vararg{IntegerLike}}
+
+Return the dimensions of the size `sz` as a tuple of dynamic or static
+integers.
+
+Inverse of [`canonical_size`](@ref).
+"""
+function size_dims end
+export size_dims
+
+@inline size_dims(sz::Tuple{Vararg{IntegerLike}}) = sz
+@inline size_dims(::StaticArrays.Size{S}) where {S} = map(static, S)
 
 """
     canonical_axes(axs::AxesLike)
@@ -373,3 +409,280 @@ end
 # Convert a `StaticArrayInterface.known_size` result to a canonical size:
 @inline _knownsize2size(::Type, ksz::Tuple{Vararg{Int}}) = canonical_size(static(ksz))
 @inline _knownsize2size(::Type{AT}, ::Tuple) where {AT} = NoTypeSize{AT}()
+
+
+"""
+    maybestatic_view(A, r::Union{AbstractUnitRange,StaticUnitRangeLike})
+    maybestatic_view(A, from::IntegerLike, until::IntegerLike)
+
+A view of the vector or tuple `A` over the index range `r`, resp. from index
+`from` to index `until`.
+
+Static vectors of a bits type give static vectors for static indices,
+copies can't be told apart from views for them. Other static vectors give
+StaticArrays' `view`, which is statically sized for `MArray`s and
+`SizedArray`s. Tuples give tuples, other vectors a `view`.
+"""
+function maybestatic_view end
+export maybestatic_view
+
+Base.@propagate_inbounds maybestatic_view(A, r::Union{AbstractUnitRange,StaticUnitRangeLike}) =
+    maybestatic_view(A, maybestatic_first(r), maybestatic_last(r))
+
+Base.@propagate_inbounds function maybestatic_view(
+    A::AbstractVector,
+    from::IntegerLike,
+    until::IntegerLike,
+)
+    view(A, dynamic(from):dynamic(until))
+end
+
+Base.@propagate_inbounds function maybestatic_view(
+    A::StaticVector,
+    ::StaticInteger{F},
+    ::StaticInteger{U},
+) where {F,U}
+    if isbitstype(typeof(A))
+        L = max(0, U - F + 1)
+        SVector{L,eltype(A)}(ntuple(i -> A[F+i-1], Val(L)))
+    else
+        view(A, StaticUnitRange(F, U))
+    end
+end
+
+Base.@propagate_inbounds function maybestatic_view(
+    tpl::Tuple,
+    ::StaticInteger{F},
+    ::StaticInteger{U},
+) where {F,U}
+    ntuple(i -> tpl[F+i-1], Val(max(0, U - F + 1)))
+end
+
+Base.@propagate_inbounds function maybestatic_view(
+    tpl::Tuple,
+    from::IntegerLike,
+    until::IntegerLike,
+)
+    # Only a statically known length can be a `Val`, and tuples are never
+    # longer than an `Int`:
+    ntuple(i -> tpl[from+i-1], Int(max(0, dynamic(until) - dynamic(from) + 1)))
+end
+
+
+"""
+    split_at(A, n::IntegerLike)
+
+Split the vector or tuple `A` into its first `n` elements and the rest.
+
+The parts are views as [`maybestatic_view`](@ref) gives them, statically
+sized for static vectors and tuples if `n` is static.
+"""
+function split_at end
+export split_at
+
+@inline function split_at(A::Union{AbstractVector,Tuple}, n::IntegerLike)
+    len = maybestatic_length(A)
+    0 <= dynamic(n) <= dynamic(len) || _throw_split_out_of_range(n, len)
+    idxs = maybestatic_eachindex(A)
+    i_first = maybestatic_first(idxs)
+    maybestatic_view(A, i_first, i_first + n - one(n)),
+    maybestatic_view(A, i_first + n, maybestatic_last(idxs))
+end
+
+@noinline _throw_split_out_of_range(n, len) =
+    throw(ArgumentError("Can't split after $n of $len elements"))
+
+
+"""
+    static_mapreduce(f, op, ::Type{<:NTuple{N,Any}})
+
+Reduce `f` of the element types of a fixed-length tuple type with `op`.
+
+Folded recursively from the right, so that the result is a compile-time
+constant where `mapreduce` over a tuple of values isn't (Julia 1.10). Throws
+an `ArgumentError` for the empty tuple type.
+"""
+function static_mapreduce end
+export static_mapreduce
+
+@inline static_mapreduce(f::F, ::OP, ::Type{Tuple{T}}) where {F,OP,T} = f(T)
+@inline function static_mapreduce(f::F, op::OP, ::Type{T}) where {F,OP,N,T<:NTuple{N,Any}}
+    op(f(Base.tuple_type_head(T)), static_mapreduce(f, op, Base.tuple_type_tail(T)))
+end
+@noinline static_mapreduce(::F, ::OP, ::Type{Tuple{}}) where {F,OP} =
+    throw(ArgumentError("Can't reduce over the element types of an empty tuple type"))
+
+
+"""
+    static_reduce(op, ::Type{<:NTuple{N,Any}})
+
+Reduce the element types of a fixed-length tuple type with `op`.
+
+The `f = identity` case of [`static_mapreduce`](@ref).
+"""
+function static_reduce end
+export static_reduce
+
+@inline static_reduce(op::OP, ::Type{T}) where {OP,N,T<:NTuple{N,Any}} =
+    static_mapreduce(identity, op, T)
+
+
+"""
+    static_all(f, ::Type{<:NTuple{N,Any}})
+
+Whether `f` holds for every element type of a fixed-length tuple type.
+
+Returns `Static.True` or `Static.False`, folded recursively so that the
+result is a compile-time constant where `all` isn't (Julia 1.10).
+"""
+function static_all end
+export static_all
+
+@inline static_all(::F, ::Type{Tuple{}}) where {F} = static(true)
+@inline function static_all(f::F, ::Type{T}) where {F,N,T<:NTuple{N,Any}}
+    static(f(Base.tuple_type_head(T))) & static_all(f, Base.tuple_type_tail(T))
+end
+
+
+"""
+    static_any(f, ::Type{<:NTuple{N,Any}})
+
+Whether `f` holds for any element type of a fixed-length tuple type.
+
+Returns `Static.True` or `Static.False`, folded recursively so that the
+result is a compile-time constant where `any` isn't (Julia 1.10).
+"""
+function static_any end
+export static_any
+
+@inline static_any(::F, ::Type{Tuple{}}) where {F} = static(false)
+@inline function static_any(f::F, ::Type{T}) where {F,N,T<:NTuple{N,Any}}
+    static(f(Base.tuple_type_head(T))) | static_any(f, Base.tuple_type_tail(T))
+end
+
+
+# Dimensions of an array as a tuple of dynamic or static integers:
+@inline _dims_of(A) = size_dims(maybestatic_size(A))
+
+@inline function _check_leading_dims(A, ::StaticInteger{N}) where {N}
+    0 <= N <= ndims(A) || _throw_leading_dims(ndims(A), N)
+    return nothing
+end
+
+@noinline _throw_leading_dims(n, N) =
+    throw(DimensionMismatch("Can't operate on the $N leading dimensions of a $n-dimensional object"))
+
+
+"""
+    drop_leading_dims(A::AbstractArray, ::StaticInteger{N})
+
+Drop the `N` leading dimensions of `A`, which must be of size one.
+
+Reshaping instead of `dropdims` keeps static arrays static and infers.
+"""
+function drop_leading_dims end
+export drop_leading_dims
+
+@inline function drop_leading_dims(A::AbstractArray, n::StaticInteger{N}) where {N}
+    _check_leading_dims(A, n)
+    dims = _dims_of(A)
+    all(==(1), ntuple(i -> dims[i], Val(N))) || _throw_dropped_dims()
+    maybestatic_reshape(A, ntuple(i -> dims[N+i], Val(ndims(A) - N)))
+end
+
+@noinline _throw_dropped_dims() =
+    throw(ArgumentError("Dropped leading dimensions must all be of size one"))
+
+
+"""
+    merge_leading_dims(A::AbstractArray, ::StaticInteger{N})
+
+Merge the `N` leading dimensions of `A` into one.
+
+`N == 0` adds a leading dimension of size one. Static arrays stay static.
+"""
+function merge_leading_dims end
+export merge_leading_dims
+
+@inline merge_leading_dims(A::AbstractArray, ::StaticInteger{0}) =
+    maybestatic_reshape(A, (static(1), _dims_of(A)...))
+
+@inline function merge_leading_dims(A::AbstractArray, n::StaticInteger{N}) where {N}
+    _check_leading_dims(A, n)
+    dims = _dims_of(A)
+    lead = ntuple(i -> dims[i], Val(N))
+    maybestatic_reshape(A, (prod(lead), ntuple(i -> dims[N+i], Val(ndims(A) - N))...))
+end
+
+
+# Reduce `A` over its `N` leading dimensions, `red(A)` reduces over all
+# dimensions, `red(A; dims)` over the given ones:
+@inline function _reduce_leading_dims(red::F, A, n::StaticInteger{N}) where {F,N}
+    _check_leading_dims(A, n)
+    if N == ndims(A)
+        red(A)
+    elseif N == 0
+        A
+    else
+        drop_leading_dims(_reduce_dims(red, A, n), n)
+    end
+end
+
+@inline _reduce_dims(red::F, A::AbstractArray, ::StaticInteger{N}) where {F,N} =
+    red(A; dims = ntuple(identity, Val(N)))
+
+# StaticArrays only reduces over a single dimension at a time:
+@inline _reduce_dims(::F, A::StaticArray, ::StaticInteger{0}) where {F} = A
+@inline _reduce_dims(red::F, A::StaticArray, ::StaticInteger{N}) where {F,N} =
+    _reduce_dims(red, red(A; dims = N), static(N - 1))
+
+
+"""
+    all_leading_dims(A::AbstractArray{Bool}, ::StaticInteger{N})
+
+Reduce `A` with `all` over its `N` leading dimensions.
+
+Returns an array over the remaining dimensions, `true` or `false` if there
+are none. Static arrays stay static.
+"""
+function all_leading_dims end
+export all_leading_dims
+
+@inline all_leading_dims(A::AbstractArray{Bool}, n::StaticInteger) = _reduce_leading_dims(all, A, n)
+
+
+"""
+    sum_leading_dims(A, ::StaticInteger{N})
+
+Sum `A` over its `N` leading dimensions.
+
+Returns an array over the remaining dimensions, a number if there are none.
+Static arrays stay static. Lazy broadcasts are reduced without
+materialization where their style supports it.
+"""
+function sum_leading_dims end
+export sum_leading_dims
+
+@inline sum_leading_dims(A::Union{Number,AbstractArray}, n::StaticInteger) =
+    _reduce_leading_dims(sum, A, n)
+
+@inline function sum_leading_dims(bc::Broadcast.Broadcasted, n::StaticInteger{N}) where {N}
+    _check_leading_dims(bc, n)
+    if N == ndims(bc)
+        _sum_broadcast(bc)
+    elseif N == 0
+        bc
+    else
+        sum_leading_dims(copy(bc), n)
+    end
+end
+
+# Broadcast styles whose lazy reductions work without materialization:
+const _EagerReducibleBroadcast = Broadcast.Broadcasted{
+    <:Union{Broadcast.DefaultArrayStyle,StaticArrays.StaticArrayStyle},
+}
+
+# An empty broadcast has no neutral element to start from, the empty array
+# it materializes to has one:
+@inline _sum_broadcast(bc::_EagerReducibleBroadcast) = length(bc) == 0 ? sum(copy(bc)) : sum(bc)
+@inline _sum_broadcast(bc::Broadcast.Broadcasted) = sum(copy(bc))

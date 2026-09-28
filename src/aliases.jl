@@ -51,6 +51,10 @@ export RealLike
     SizeLike = Union{Tuple{},Tuple{Vararg{IntegerLike}},StaticArrays.Size}
 
 Something that can represent the size of a collection.
+
+A `StaticArrays.Size` must be fully static here. Sizes with
+`StaticArrays.Dynamic()` dimensions, like `StaticArrays.Size(rand(2, 3))`,
+are not supported.
 """
 const SizeLike = Union{Tuple{},Tuple{Vararg{IntegerLike}},StaticArrays.Size}
 export SizeLike
@@ -62,7 +66,8 @@ export SizeLike
 Something that can represent the size of a statically sized collection.
 
 The empty size `()` counts as static: a zero-dimensional size is fully
-known at compile time.
+known at compile time. A `StaticArrays.Size` must be fully static, see
+[`SizeLike`](@ref).
 """
 const StaticSizeLike = Union{Tuple{Vararg{StaticInteger}},StaticArrays.Size}
 export StaticSizeLike
