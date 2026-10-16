@@ -15,6 +15,24 @@ import StaticArrays
 using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, StaticVector
 
 
+struct TestPoint3 <: StaticArrays.FieldVector{3,Float64}
+    x::Float64
+    y::Float64
+    z::Float64
+end
+
+
+# A minimal vector with non-one-based axes:
+struct TestOffsetVector{T} <: AbstractVector{T}
+    data::Vector{T}
+    offset::Int
+end
+
+Base.size(v::TestOffsetVector) = size(v.data)
+Base.axes(v::TestOffsetVector) = (v.offset .+ Base.OneTo(length(v.data)),)
+Base.getindex(v::TestOffsetVector, i::Int) = v.data[i-v.offset]
+
+
 @testset "satools" begin
     v = 4.2
     sv = static(4.2)
@@ -440,6 +458,114 @@ end
 end
 
 
+
+
+@testset "vector splitting" begin
+    A = rand(6)
+    SA = SVector{6}(A)
+    tpl = Tuple(A)
+
+    @test @inferred(maybestatic_view(A, 2, 4)) == A[2:4]
+    @test @inferred(maybestatic_view(A, 2, 4)) isa SubArray
+    @test @inferred(maybestatic_view(SA, static(2), static(4))) === SVector{3}(A[2:4])
+    @test @inferred(maybestatic_view(tpl, static(2), static(4))) === Tuple(A[2:4])
+
+    @test @inferred(maybestatic_view(A, 2:4)) == A[2:4]
+    @test @inferred(maybestatic_view(SA, StaticOneTo(4))) === SVector{4}(A[1:4])
+    @test @inferred(maybestatic_view(tpl, static(2):static(4))) === Tuple(A[2:4])
+
+    a, b = @inferred maybestatic_split(A, 2)
+    @test a == A[1:2] && b == A[3:6]
+    sa, sb = @inferred maybestatic_split(SA, static(2))
+    @test sa === SVector{2}(A[1:2]) && sb === SVector{4}(A[3:6])
+    sa0, sb0 = @inferred maybestatic_split(SA, static(0))
+    @test sa0 === SVector{0,Float64}() && sb0 === SA
+    sa6, sb6 = @inferred maybestatic_split(SA, static(6))
+    @test sa6 === SA && sb6 === SVector{0,Float64}()
+    ta, tb = @inferred maybestatic_split(tpl, static(2))
+    @test ta === tpl[1:2] && tb === tpl[3:6]
+    @test maybestatic_split(A, 0) == (A[1:0], A)
+    for n in (-1, 7)
+        @test_throws ArgumentError maybestatic_split(A, n)
+        @test_throws ArgumentError maybestatic_split(SA, static(n))
+        @test_throws ArgumentError maybestatic_split(tpl, static(n))
+    end
+
+    # Empty ranges:
+    @test @inferred(maybestatic_view(A, 3:2)) == Float64[]
+    @test @inferred(maybestatic_view(A, 5, 2)) == Float64[]
+    @test @inferred(maybestatic_view(SA, static(3):static(2))) === SVector{0,Float64}()
+    @test @inferred(maybestatic_view(SA, static(5), static(2))) === SVector{0,Float64}()
+    @test @inferred(maybestatic_view(tpl, static(5), static(2))) === ()
+    # Extreme endpoints must neither overflow into a non-empty length nor
+    # wrap around into an empty one:
+    @test @inferred(maybestatic_view(tpl, static(typemax(Int)), static(typemin(Int)))) === ()
+    @test @inferred(maybestatic_view(SA, static(typemax(Int)), static(typemin(Int)))) ===
+          SVector{0,Float64}()
+    @test_throws BoundsError maybestatic_view(tpl, static(typemin(Int)), static(typemax(Int)))
+    @test_throws BoundsError maybestatic_view(tpl, typemin(Int), typemax(Int))
+    @test_throws BoundsError maybestatic_view(SA, static(typemin(Int)), static(typemax(Int)))
+    @test_throws BoundsError maybestatic_view(MVector{6}(A), static(typemin(Int)), static(typemax(Int)))
+
+    # A zero-dimensional array has no first dimension to view along:
+    @test_throws DimensionMismatch maybestatic_view(fill(42), 1:1)
+    @test_throws DimensionMismatch maybestatic_split(fill(42), 0)
+    @test_throws DimensionMismatch maybestatic_split(SArray{Tuple{},Int,0,1}(42), static(0))
+    narrow_first, narrow_rest = maybestatic_split(Int8(-100):Int8(100), 1)
+    @test collect(narrow_first) == [Int8(-100)] && length(narrow_rest) == 200
+
+    # Arrays are viewed and split along their first dimension:
+    M = reshape(collect(1.0:6.0), 3, 2)
+    SM = SMatrix{3,2}(M)
+    @test @inferred(maybestatic_view(M, 1, 2)) == M[1:2, :]
+    @test @inferred(maybestatic_view(SM, static(1), static(2))) === SMatrix{2,2}(M[1:2, :])
+    @test @inferred(maybestatic_view(SM, static(3), static(1))) === SMatrix{0,2,Float64}()
+    ma, mb = @inferred maybestatic_split(M, 2)
+    @test ma == M[1:2, :] && mb == M[3:3, :]
+    sma, smb = @inferred maybestatic_split(SM, static(1))
+    @test sma === SMatrix{1,2}(M[1:1, :]) && smb === SMatrix{2,2}(M[2:3, :])
+    @test_throws ArgumentError maybestatic_split(M, 4)
+    MM = MMatrix{3,2}(M)
+    mma, _ = @inferred maybestatic_split(MM, static(1))
+    MM[1, 1] = 42
+    @test mma[1, 1] == 42
+
+    # Index types other than `Int` work:
+    WideInt = sizeof(Int) == 4 ? Int64 : Int128
+    for I in (Int32, WideInt, BigInt)
+        @test maybestatic_view((1, 2, 3), I(1), I(2)) === (1, 2)
+        @test maybestatic_split((1, 2, 3), I(1)) === ((1,), (2, 3))
+    end
+
+    # Unsigned indices must not wrap around on an empty range, and unsigned
+    # counts must not promote negative indices:
+    @test maybestatic_view((1, 2, 3), UInt(1), UInt(2)) === (1, 2)
+    @test maybestatic_view((1, 2, 3), UInt(3), UInt(1)) === ()
+    ov = TestOffsetVector([10, 20, 30], -2)
+    @test axes(ov) == (-1:1,)
+    for n in (1, UInt(1))
+        first_part, rest = maybestatic_split(ov, n)
+        @test collect(first_part) == [10] && collect(rest) == [20, 30]
+    end
+
+    @test @inferred(maybestatic_view(SA, StaticUnitRange(2, 4))) === SVector{3}(A[2:4])
+    @test @inferred(maybestatic_view(tpl, StaticUnitRange(2, 4))) === Tuple(A[2:4])
+
+    # Immutable static vectors give static vectors:
+    @test @inferred(maybestatic_view(TestPoint3(1, 2, 3), static(2), static(3))) ===
+          SVector(2.0, 3.0)
+    @test @inferred(maybestatic_view(StaticUnitRange(3, 8), static(2), static(3))) === SVector(4, 5)
+
+    # Views of mutable static vectors share their memory:
+    for MA in (MVector{6}(A), SizedVector{6}(copy(A)))
+        va = @inferred maybestatic_view(MA, static(2), static(4))
+        @test va isa StaticVector{3}
+        ma, mb = @inferred maybestatic_split(MA, static(2))
+        @test ma isa StaticVector{2} && mb isa StaticVector{4}
+        MA[2] = 42
+        @test va[1] == 42 && ma[2] == 42
+    end
+end
 
 
 @testset "type-level axes2size" begin

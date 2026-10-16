@@ -429,6 +429,114 @@ end
 # Convert a `StaticArrayInterface.known_size` result to a canonical size:
 @inline _knownsize2size(::Type, ksz::Tuple{Vararg{Int}}) = canonical_size(static(ksz))
 @inline _knownsize2size(::Type{AT}, ::Tuple) where {AT} = NoTypeSize{AT}()
+
+
+"""
+    maybestatic_view(A, r::Union{AbstractUnitRange,StaticUnitRangeLike})
+    maybestatic_view(A, from::IntegerLike, until::IntegerLike)
+
+A view of the array or tuple `A` along its first dimension, over the index
+range `r`, or from index `from` to index `until`.
+
+Static arrays of a bits type give static arrays for static indices, because
+a copy of one can't be told apart from a view. Other static arrays give
+StaticArrays' `view`, which is statically sized for `MArray`s and
+`SizedArray`s. Tuples give tuples, other arrays a `view`.
+"""
+function maybestatic_view end
+export maybestatic_view
+
+Base.@propagate_inbounds maybestatic_view(A, r::Union{AbstractUnitRange,StaticUnitRangeLike}) =
+    maybestatic_view(A, maybestatic_first(r), maybestatic_last(r))
+
+Base.@propagate_inbounds function maybestatic_view(
+    A::AbstractArray,
+    from::IntegerLike,
+    until::IntegerLike,
+)
+    view(A, dynamic(from):dynamic(until), _trailing_colons(A)...)
+end
+
+Base.@propagate_inbounds function maybestatic_view(
+    A::StaticArray,
+    ::StaticInteger{F},
+    ::StaticInteger{U},
+) where {F,U}
+    # Check the bounds before taking the length: the length of an extreme
+    # range wraps around, and the view would come out empty.
+    @boundscheck U < F || checkbounds(A, F:U, _trailing_colons(A)...)
+    r = StaticUnitRange(F, U < F ? F - 1 : U)
+    if isbitstype(typeof(A))
+        A[r, _trailing_colons(A)...]
+    else
+        view(A, r, _trailing_colons(A)...)
+    end
+end
+
+@inline _trailing_colons(::AbstractArray{<:Any,N}) where {N} = ntuple(_ -> Colon(), Val(N - 1))
+@noinline _trailing_colons(::AbstractArray{<:Any,0}) = _throw_no_first_dim()
+
+@noinline _throw_no_first_dim() =
+    throw(DimensionMismatch("A zero-dimensional array has no first dimension"))
+
+Base.@propagate_inbounds function maybestatic_view(
+    tpl::Tuple,
+    ::StaticInteger{F},
+    ::StaticInteger{U},
+) where {F,U}
+    @boundscheck U < F || 1 <= F && U <= length(tpl) || throw(BoundsError(tpl, F:U))
+    ntuple(i -> tpl[F+i-1], Val(U < F ? 0 : U - F + 1))
+end
+
+Base.@propagate_inbounds function maybestatic_view(
+    tpl::Tuple,
+    from::IntegerLike,
+    until::IntegerLike,
+)
+    # A `Val` would specialize on a runtime length here. The bounds are
+    # checked before the length is taken, and taken in `Int`: unsigned or
+    # extreme indices would wrap around, and tuples are never longer than
+    # an `Int`.
+    f, u = Int(dynamic(from)), Int(dynamic(until))
+    @boundscheck u < f || 1 <= f && u <= length(tpl) || throw(BoundsError(tpl, f:u))
+    ntuple(i -> tpl[f+i-1], u < f ? 0 : u - f + 1)
+end
+
+
+"""
+    maybestatic_split(A, n::IntegerLike)
+
+Split the array or tuple `A` along its first dimension into its first `n`
+slices and the rest.
+
+The parts are views from [`maybestatic_view`](@ref). They are statically
+sized for static arrays and tuples if `n` is static.
+"""
+function maybestatic_split end
+export maybestatic_split
+
+@inline function maybestatic_split(A::Union{AbstractArray,Tuple}, n::IntegerLike)
+    ax = _first_axis(A)
+    len = maybestatic_length(ax)
+    0 <= dynamic(n) <= dynamic(len) || _throw_split_out_of_range(n, len)
+    m = _as_index(n)
+    i_first = maybestatic_first(ax)
+    maybestatic_view(A, i_first, i_first + m - one(m)),
+    maybestatic_view(A, i_first + m, maybestatic_last(ax))
+end
+
+@inline _first_axis(A) = first(maybestatic_axes(A))
+@noinline _first_axis(::AbstractArray{<:Any,0}) = _throw_no_first_dim()
+
+# Dynamic counts become `Int`, because an unsigned count would promote
+# negative indices to unsigned:
+@inline _as_index(n::StaticInteger) = n
+@inline _as_index(n::Integer) = Int(n)
+
+@noinline _throw_split_out_of_range(n, len) =
+    throw(ArgumentError("Can't split after $n of $len elements"))
+
+
 """
     tuple_type_mapreduce(f, op, ::Type{<:NTuple{N,Any}})
 
