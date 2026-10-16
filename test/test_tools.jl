@@ -458,6 +458,115 @@ end
 end
 
 
+@testset "leading dimensions" begin
+    A = rand(2, 3, 4)
+    SA = SArray{Tuple{2,3,4}}(A)
+
+    @test @inferred(sum_leading_dims(4.2, static(0))) === 4.2
+    @test_throws DimensionMismatch sum_leading_dims(4.2, static(1))
+
+    @test @inferred(sum_leading_dims(A, static(0))) === A
+    @test @inferred(sum_leading_dims(A, static(1))) ≈ dropdims(sum(A, dims = 1), dims = 1)
+    @test @inferred(sum_leading_dims(A, static(2))) ≈
+          dropdims(sum(A, dims = (1, 2)), dims = (1, 2))
+    @test @inferred(sum_leading_dims(A, static(3))) ≈ sum(A)
+
+    @test @inferred(sum_leading_dims(SA, static(1))) isa SArray{Tuple{3,4}}
+    @test @inferred(sum_leading_dims(SA, static(1))) ≈ sum_leading_dims(A, static(1))
+    @test @inferred(sum_leading_dims(SA, static(3))) ≈ sum(A)
+
+    bc = Broadcast.instantiate(Broadcast.broadcasted(+, A, 1))
+    @test @inferred(sum_leading_dims(bc, static(3))) ≈ sum(A .+ 1)
+    @test @inferred(sum_leading_dims(bc, static(1))) ≈ sum_leading_dims(A .+ 1, static(1))
+    sbc = Broadcast.instantiate(Broadcast.broadcasted(+, SA, 1))
+    @test @inferred(sum_leading_dims(sbc, static(3))) ≈ sum(A .+ 1)
+
+    @test @inferred(drop_leading_dims(reshape(A, 1, 1, 2, 3, 4), static(2))) == A
+    @test @inferred(drop_leading_dims(SArray{Tuple{1,3,4}}(A[1:1, :, :]), static(1))) isa
+          SArray{Tuple{3,4}}
+    @test_throws DimensionMismatch drop_leading_dims(A, static(4))
+
+    @test @inferred(merge_leading_dims(A, static(0))) == reshape(A, 1, 2, 3, 4)
+    @test @inferred(merge_leading_dims(A, static(2))) == reshape(A, 6, 4)
+    @test @inferred(merge_leading_dims(SA, static(2))) isa SArray{Tuple{6,4}}
+    @test @inferred(merge_leading_dims(SA, static(0))) isa SArray{Tuple{1,2,3,4}}
+    @test @inferred(merge_leading_dims(A, static(3))) == reshape(A, 24)
+
+    B = A .> 0.5
+    SB = SA .> 0.5
+    @test @inferred(all_leading_dims(B, static(3))) === all(B)
+    @test @inferred(all_leading_dims(B, static(1))) ==
+          dropdims(all(B, dims = 1), dims = 1)
+    @test @inferred(all_leading_dims(SB, static(1))) isa SArray{Tuple{3,4},Bool}
+    @test all_leading_dims(SB, static(1)) == all_leading_dims(B, static(1))
+    @test @inferred(all_leading_dims(SB, static(3))) === all(B)
+    @test @inferred(all_leading_dims(B, static(2))) ==
+          dropdims(all(B, dims = (1, 2)), dims = (1, 2))
+
+    @test @inferred(all_leading_dims(B, static(0))) === B
+    @test @inferred(all_leading_dims(fill(true), static(0))) === true
+    @test @inferred(sum_leading_dims(fill(4.2), static(0))) === 4.2
+    @test @inferred(sum_leading_dims(bc, static(0))) === bc
+    for f in (sum_leading_dims, drop_leading_dims, merge_leading_dims), n in (-1, 4)
+        @test_throws DimensionMismatch f(A, static(n))
+        @test_throws DimensionMismatch f(SA, static(n))
+    end
+    for n in (-1, 4)
+        @test_throws DimensionMismatch all_leading_dims(B, static(n))
+        @test_throws DimensionMismatch all_leading_dims(SB, static(n))
+        @test_throws DimensionMismatch sum_leading_dims(bc, static(n))
+    end
+
+    # Only dimensions of size one can be dropped, even if the length allows it:
+    @test_throws ArgumentError drop_leading_dims(zeros(2, 0), static(1))
+    @test_throws ArgumentError drop_leading_dims(SArray{Tuple{2,0},Float64}(), static(1))
+
+    @test @inferred(sum_leading_dims(zeros(0, 3), static(1))) == zeros(3)
+
+    # Reducing an empty dimension gives the reduction of nothing, and a
+    # static reduction with an empty result needs its element type from
+    # elsewhere:
+    @test @inferred(sum_leading_dims(SArray{Tuple{0,0,3},Float64}(), static(2))) ===
+          SVector(0.0, 0.0, 0.0)
+    @test @inferred(all_leading_dims(SArray{Tuple{0,0,3},Bool}(), static(2))) ===
+          SVector(true, true, true)
+    @test @inferred(all_leading_dims(SMatrix{2,0,Bool}(), static(1))) === SVector{0,Bool}()
+    @test @inferred(sum_leading_dims(SArray{Tuple{0,2,3},Float64}(), static(1))) ==
+          sum_leading_dims(zeros(0, 2, 3), static(1))
+
+    # `sum` and `all` share their machinery with other reductions to values
+    # that take a `dims` keyword, so it must reduce the elements of `A`, not
+    # the results of the reduction itself:
+    reduce_dims(red, A, n) = StaticThings._reduce_leading_dims(red, A, n, StaticThings._NoInit())
+    E = reshape([1, 100, 2, 3, 4, 40, 5, 6], 2, 2, 2)
+    SE = SArray{Tuple{2,2,2}}(E)
+    @test reduce_dims(extrema, SE, static(2)) == reduce_dims(extrema, E, static(2))
+    @test reduce_dims(maximum, SMatrix{2,0,Float64}(), static(1)) ==
+          reduce_dims(maximum, zeros(2, 0), static(1))
+    # Reducing nothing without an identity fails. StaticArrays and Base
+    # disagree on the exception type before Julia 1.11:
+    @test_throws Exception reduce_dims(maximum, SMatrix{0,3,Float64}(), static(1))
+    @test_throws ArgumentError reduce_dims(maximum, zeros(0, 3), static(1))
+    @test @inferred(sum_leading_dims(Fill(2.0, 2, 3), static(1))) == fill(4.0, 3)
+    bc0 = Broadcast.instantiate(Broadcast.broadcasted(+, zeros(0, 3), 1))
+    @test @inferred(sum_leading_dims(bc0, static(2))) === 0.0
+
+    # An `init` goes to `sum`, for lazy broadcasts too:
+    @test @inferred(sum_leading_dims(A, static(1); init = 0.5)) ≈
+          dropdims(sum(A, dims = 1), dims = 1) .+ 0.5
+    @test @inferred(sum_leading_dims(A, static(3); init = 0.5)) ≈ sum(A) + 0.5
+    @test @inferred(sum_leading_dims(SA, static(1); init = 0.5)) ≈
+          sum_leading_dims(A, static(1); init = 0.5)
+    @test @inferred(sum_leading_dims(bc, static(3); init = 0.5)) ≈ sum(A .+ 1) + 0.5
+    @test @inferred(sum_leading_dims(bc0, static(2); init = 0.5)) === 0.5
+    bc_any = Broadcast.instantiate(Broadcast.broadcasted(identity, Any[]))
+    @test sum_leading_dims(bc_any, static(1); init = 0.0) === 0.0
+    # StaticArrays ignores an `init` over an empty dimension. The result
+    # must still be the reduction of nothing with it:
+    @test @inferred(sum_leading_dims(SMatrix{0,3,Int}(), static(1); init = 0.5)) ===
+          SVector(0.5, 0.5, 0.5)
+    @test sum_leading_dims(SMatrix{0,3,Any}(), static(1); init = 0.5) == [0.5, 0.5, 0.5]
+end
 
 
 @testset "vector splitting" begin

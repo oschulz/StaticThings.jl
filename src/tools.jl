@@ -609,3 +609,212 @@ export tuple_type_any
     static(f(Base.tuple_type_head(T))) | tuple_type_any(f, Base.tuple_type_tail(T))
 end
 
+
+@inline _dims_of(A) = size_tuple(maybestatic_size(A))
+
+@inline function _check_leading_dims(A, ::StaticInteger{N}) where {N}
+    0 <= N <= ndims(A) || _throw_leading_dims(ndims(A), N)
+    return nothing
+end
+
+@noinline _throw_leading_dims(n, N) =
+    throw(DimensionMismatch("Can't operate on the $N leading dimensions of a $n-dimensional object"))
+
+
+@inline _reshape_to_axes(A, axs) = _reshape_to_axes(A, axs, maybestatic_axes(A))
+
+# A size is enough when the array and the new axes both start at one, and it
+# keeps static sizes static:
+@inline _reshape_to_axes(A, axs::Tuple{Vararg{OneToLike}}, ::Tuple{Vararg{OneToLike}}) =
+    maybestatic_reshape(A, axes2size(axs))
+
+# Anything else goes through the array type's own `reshape`, with unit
+# ranges: `Base.OneTo` would select Base's `reshape`, which requires
+# one-based indexing:
+@inline _reshape_to_axes(A, axs, ::Any) = reshape(A, map(_as_unitrange, axs))
+
+@inline _as_unitrange(ax) = dynamic(maybestatic_first(ax)):dynamic(maybestatic_last(ax))
+
+
+"""
+    drop_leading_dims(A::AbstractArray, ::StaticInteger{N})
+
+Drop the `N` leading dimensions of `A`, which must be of size one.
+
+The axes of the remaining dimensions are kept. If they don't start at one,
+the array type has to support reshaping to such axes, as `OffsetArray` does
+and as `dropdims` requires too. Static arrays stay static.
+"""
+function drop_leading_dims end
+export drop_leading_dims
+
+@inline function drop_leading_dims(A::AbstractArray, n::StaticInteger{N}) where {N}
+    _check_leading_dims(A, n)
+    dims = _dims_of(A)
+    all(==(1), ntuple(i -> dims[i], Val(N))) || _throw_dropped_dims()
+    axs = maybestatic_axes(A)
+    _reshape_to_axes(A, ntuple(i -> axs[N+i], Val(ndims(A) - N)))
+end
+
+@noinline _throw_dropped_dims() =
+    throw(ArgumentError("Dropped leading dimensions must all be of size one"))
+
+
+"""
+    merge_leading_dims(A::AbstractArray, ::StaticInteger{N})
+
+Merge the `N` leading dimensions of `A` into one.
+
+The merged dimension is one-based. The axes of the remaining dimensions are
+kept, as in [`drop_leading_dims`](@ref), and `N == 0` adds a leading
+dimension of size one. Static arrays stay static.
+"""
+function merge_leading_dims end
+export merge_leading_dims
+
+@inline merge_leading_dims(A::AbstractArray, ::StaticInteger{0}) =
+    _reshape_to_axes(A, (maybestatic_oneto(static(1)), maybestatic_axes(A)...))
+
+@inline function merge_leading_dims(A::AbstractArray, n::StaticInteger{N}) where {N}
+    _check_leading_dims(A, n)
+    axs = maybestatic_axes(A)
+    lead = ntuple(i -> maybestatic_length(axs[i]), Val(N))
+    _reshape_to_axes(
+        A,
+        (maybestatic_oneto(prod(lead)), ntuple(i -> axs[N+i], Val(ndims(A) - N))...),
+    )
+end
+
+# No `init`: the reduction starts from its own neutral element:
+struct _NoInit end
+
+# `red(A)` reduces over all dimensions, `red(A; dims)` over the given ones,
+# both with an `init` if there is one. Only reductions to values work: the
+# indices of a reduction like `argmax` would refer to the array that was
+# reduced, not to `A`:
+@inline function _reduce_leading_dims(red::F, A, n::StaticInteger{N}, init) where {F,N}
+    _check_leading_dims(A, n)
+    if N == ndims(A)
+        _reduce_all(red, A, init)
+    elseif N == 0
+        A
+    else
+        _reduce_dims(red, A, n, init)
+    end
+end
+
+# Explicit keywords, because a splatted `init` doesn't infer through
+# StaticArrays:
+@inline _reduce_all(red::F, A, ::_NoInit) where {F} = red(A)
+@inline _reduce_all(red::F, A, init) where {F} = red(A; init = init)
+@inline _reduce_over(red::F, A, dims, ::_NoInit) where {F} = red(A; dims = dims)
+@inline _reduce_over(red::F, A, dims, init) where {F} = red(A; dims = dims, init = init)
+
+@inline _reduce_dims(red::F, A, ::StaticInteger{N}, init) where {F,N} =
+    drop_leading_dims(_reduce_over(red, A, ntuple(identity, Val(N)), init), static(N))
+
+# StaticArrays can't reduce over several dimensions at once, and reducing
+# them one by one would reduce the results of `red` instead of the elements
+# of `A`. Merging them is a reshape, so it takes a single reduction:
+@inline function _reduce_dims(red::F, A::StaticArray, n::StaticInteger, init) where {F}
+    merged = merge_leading_dims(A, n)
+    R = _reduce_first_dim(red, merged, init, maybestatic_length(_first_axis(merged)))
+    drop_leading_dims(R, static(1))
+end
+
+@inline _reduce_first_dim(red::F, A, init, ::StaticInteger) where {F} =
+    _typed_empty(red, A, init, _reduce_over(red, A, 1, init))
+@inline _reduce_first_dim(red::F, A, init::_NoInit, ::StaticInteger{0}) where {F} =
+    _typed_empty(red, A, init, _reduce_over(red, A, 1, init))
+
+# StaticArrays ignores an `init` when the reduced dimension is empty. Every
+# element of the result is then the reduction of nothing with it:
+@inline function _reduce_first_dim(red::F, A, init, ::StaticInteger{0}) where {F}
+    sz = (static(1), Base.tail(size_tuple(maybestatic_size(A)))...)
+    maybestatic_fill(_reduce_all(red, eltype(A)[], init), canonical_size(sz))
+end
+
+@inline _typed_empty(::F, ::Any, init, R) where {F} = R
+
+# A StaticArrays reduction with an empty result has no elements to take an
+# element type from. Base's reduction of a plain array has one, at the cost
+# of an allocation and of Base's accumulator, which may be wider. There is
+# no public way to ask for the element type alone:
+@inline function _typed_empty(red::F, A, init, R::StaticArray{<:Any,Union{}}) where {F}
+    T = eltype(_reduce_over(red, Array(A), 1, init))
+    staticarray_type(T, canonical_size(maybestatic_size(R)))()
+end
+
+
+"""
+    all_leading_dims(A::AbstractArray{Bool}, ::StaticInteger{N})
+
+Reduce `A` with `all` over its `N` leading dimensions.
+
+Returns an array over the remaining dimensions, `true` or `false` if there
+are none, and `A` itself for `N == 0`. Static arrays stay static, and the
+remaining dimensions keep their axes.
+"""
+function all_leading_dims end
+export all_leading_dims
+
+@inline all_leading_dims(A::AbstractArray{Bool}, n::StaticInteger) =
+    _reduce_leading_dims(all, A, n, _NoInit())
+
+
+"""
+    sum_leading_dims(A, ::StaticInteger{N}; init)
+
+Sum `A` over its `N` leading dimensions.
+
+Returns an array over the remaining dimensions, a number if there are none,
+and `A` itself for `N == 0`. Static arrays stay static, and the remaining
+dimensions keep their axes. An `init` is passed on to `sum`.
+
+# Extended help
+
+A lazy broadcast summed over all of its dimensions is reduced without
+materialization, if its style supports that. It then accumulates in index
+order instead of pairwise, like Base's reductions over selected dimensions
+do. Summing only some of its dimensions materializes it first, because Base
+has no reduction over selected dimensions of a `Broadcasted`. An empty
+broadcast is materialized too, unless an `init` provides the neutral
+element.
+
+The sum is taken by the `sum` method of `A`'s own type, so a change of
+representation can change the accumulator: `sum` of a static array of a
+narrow integer type accumulates in that type, `sum` of a plain array widens.
+An empty result takes its element type from Base, which may widen it.
+"""
+function sum_leading_dims end
+export sum_leading_dims
+
+@inline sum_leading_dims(A::Union{Number,AbstractArray}, n::StaticInteger; init = _NoInit()) =
+    _reduce_leading_dims(sum, A, n, init)
+
+@inline function sum_leading_dims(
+    bc::Broadcast.Broadcasted,
+    n::StaticInteger{N};
+    init = _NoInit(),
+) where {N}
+    _check_leading_dims(bc, n)
+    if N == ndims(bc)
+        _sum_broadcast(bc, init)
+    elseif N == 0
+        bc
+    else
+        sum_leading_dims(copy(bc), n; init = init)
+    end
+end
+
+# Broadcast styles whose lazy reductions work without materialization:
+const _EagerReducibleBroadcast = Broadcast.Broadcasted{
+    <:Union{Broadcast.DefaultArrayStyle,StaticArrays.StaticArrayStyle},
+}
+
+# Without an `init`, an empty broadcast has no neutral element to start
+# from. The empty array it materializes to has one:
+@inline _sum_broadcast(bc::_EagerReducibleBroadcast, ::_NoInit) =
+    length(bc) == 0 ? sum(copy(bc)) : sum(bc)
+@inline _sum_broadcast(bc::_EagerReducibleBroadcast, init) = sum(bc; init = init)
+@inline _sum_broadcast(bc::Broadcast.Broadcasted, init) = _reduce_all(sum, copy(bc), init)

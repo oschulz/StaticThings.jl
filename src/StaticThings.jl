@@ -8,6 +8,8 @@ static and non-static values and arrays.
 """
 module StaticThings
 
+using Base: Broadcast
+
 using FillArrays: FillArrays, Fill
 
 using Static: Static, StaticInteger, static, dynamic
