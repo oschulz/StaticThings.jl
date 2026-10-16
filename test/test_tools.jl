@@ -12,7 +12,7 @@ import Static
 using Static: static
 
 import StaticArrays
-using StaticArrays: SArray, SVector
+using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, StaticVector
 
 
 @testset "satools" begin
@@ -165,27 +165,37 @@ using StaticArrays: SArray, SVector
     rshpFA = Fill(v, sz)
     rshpSA = SArray{Tuple{sz...},T}(A)
 
+    # Only static arrays become static arrays, other arrays reshape as
+    # `reshape` does:
     @test @inferred(maybestatic_reshape(A, sz)) == rshpA
     @test typeof(maybestatic_reshape(A, sz)) == typeof(rshpA)
     @test @inferred(maybestatic_reshape(A, sasz)) == rshpA
-    @test maybestatic_reshape(A, sasz) isa SArray
+    @test typeof(maybestatic_reshape(A, sasz)) == typeof(rshpA)
     @test @inferred(maybestatic_reshape(A, sisz)) == rshpA
-    @test maybestatic_reshape(A, sisz) isa SArray
+    @test typeof(maybestatic_reshape(A, sisz)) == typeof(rshpA)
 
     @test @inferred(maybestatic_reshape(FA, sz)) == rshpFA
     @test typeof(maybestatic_reshape(FA, sz)) == typeof(rshpFA)
     @test @inferred(maybestatic_reshape(FA, sasz)) == rshpFA
-    @test maybestatic_reshape(FA, sasz) isa SArray
+    @test typeof(maybestatic_reshape(FA, sasz)) == typeof(rshpFA)
     @test @inferred(maybestatic_reshape(FA, sisz)) == rshpFA
-    @test maybestatic_reshape(FA, sisz) isa SArray
+    @test typeof(maybestatic_reshape(FA, sisz)) == typeof(rshpFA)
 
     @test @inferred(maybestatic_reshape(SA, sz)) == rshpA
     @test maybestatic_reshape(SA, sz) isa Base.ReshapedArray{T,3,<:SVector}
     @test @inferred(maybestatic_reshape(SA, sasz)) === rshpSA
     @test @inferred(maybestatic_reshape(SA, sisz)) === rshpSA
 
+    # Reshaping a mutable static array shares its memory:
+    for MA in (MVector{len}(A), SizedVector{len}(copy(A)))
+        R = maybestatic_reshape(MA, sasz)
+        MA[begin] = -v
+        @test R[begin, begin, begin] == -v
+    end
+
     @test @inferred(maybestatic_reshape(SVector(v), ())) === SArray{Tuple{},T,0,1}(v)
-    @test @inferred(maybestatic_reshape([v], ())) === SArray{Tuple{},T,0,1}(v)
+    @test @inferred(maybestatic_reshape([v], ())) == fill(v)
+    @test typeof(maybestatic_reshape([v], ())) == typeof(fill(v))
 
     @test @inferred(maybestatic_length(5)) === static(1)
     @test @inferred(maybestatic_length(())) === static(0)

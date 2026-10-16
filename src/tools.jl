@@ -95,22 +95,20 @@ end
 
 
 """
-    maybestatic_reshape(A, sz)
+    maybestatic_reshape(A, sz::SizeLike)
 
-Reshapes array `A` to sizes `sz`.
+Reshapes array `A` to size `sz`.
 
 If `A` is a static array and `sz` is static, the result is a static array.
+Other arrays are reshaped with the non-static size, not converted to an
+`SArray`. As with `reshape`, the result shares the memory of a mutable `A`.
 """
 function maybestatic_reshape end
 export maybestatic_reshape
 
-maybestatic_reshape(A, sz) = reshape(A, canonical_size(sz))
-function maybestatic_reshape(A, sz::StaticSizeLike)
-    SArray(reshape(A, canonical_size(sz)))
-end
-function maybestatic_reshape(A::StaticArray, sz::Tuple{Vararg{StaticInteger}})
-    staticarray_type(eltype(A), canonical_size(sz))(Tuple(A))
-end
+@inline maybestatic_reshape(A, sz::SizeLike) = reshape(A, asnonstatic(sz))
+@inline maybestatic_reshape(A::StaticArray, sz::StaticSizeLike) =
+    reshape(A, canonical_size(sz))
 
 
 """
