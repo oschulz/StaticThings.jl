@@ -167,16 +167,35 @@ export maybestatic_axes
 
 
 """
-    StaticThings.axes2size(x::Tuple)
-    StaticThings.axes2size(x::StaticArrays.Size)
+    StaticThings.axes2size(axs::AxesLike)
+    StaticThings.axes2size(::Type{<:NTuple{N,StaticUnitRangeLike}})
 
 Get the size of a collection-like object from its axes.
+
+The type-level form gives the size of collections with statically sized
+axes without an instance at hand.
 """
 function axes2size end
 export axes2size
 
 @inline axes2size(::Tuple{}) = ()
 @inline axes2size(axs::Tuple) = canonical_size(map(maybestatic_length, axs))
+
+@inline axes2size(::Type{A}) where {N,A<:NTuple{N,StaticUnitRangeLike}} =
+    canonical_size(_static_axes_lengths(A))
+
+@inline _static_axes_lengths(::Type{Tuple{}}) = ()
+@inline _static_axes_lengths(::Type{A}) where {A<:Tuple} = (
+    _static_range_length(Base.tuple_type_head(A)),
+    _static_axes_lengths(Base.tuple_type_tail(A))...,
+)
+
+@inline _static_range_length(::Type{<:StaticArrays.SOneTo{N}}) where {N} = static(N)
+@static if isdefined(StaticArrays, :SUnitRange)
+    @inline _static_range_length(::Type{<:StaticArrays.SUnitRange{B,L}}) where {B,L} = static(L)
+end
+@inline _static_range_length(::Type{<:Static.SUnitRange{F,L}}) where {F,L} =
+    static(L < F ? 0 : L - F + 1)
 
 
 """
@@ -327,6 +346,20 @@ export canonical_size
 @inline canonical_size(sz::SizeLike) = sz
 @inline canonical_size(sz::Tuple{Vararg{Static.StaticInteger}}) =
     StaticArrays.Size{map(dynamic, sz)}()
+
+"""
+    size_tuple(sz::SizeLike)::Tuple{Vararg{IntegerLike}}
+
+Return the dimensions of the size `sz` as a tuple of dynamic or static
+integers.
+
+Inverse of [`canonical_size`](@ref).
+"""
+function size_tuple end
+export size_tuple
+
+@inline size_tuple(sz::Tuple{Vararg{IntegerLike}}) = sz
+@inline size_tuple(::StaticArrays.Size{S}) where {S} = map(static, S)
 
 """
     canonical_axes(axs::AxesLike)

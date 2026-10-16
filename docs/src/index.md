@@ -15,7 +15,7 @@ Built around these alias types, StaticThings provides:
 
 * Length/size/axes query functions: [`maybestatic_length`](@ref), [`maybestatic_size`](@ref), [`maybestatic_axes`](@ref), [`maybestatic_eachindex`](@ref), [`maybestatic_first`](@ref), [`maybestatic_last`](@ref) and [`size_from_type`](@ref).
 
-* Size/axes conversion functions: [`axes2size`](@ref), [`size2axes`](@ref), [`size2length`](@ref), [`asaxes`](@ref), [`canonical_indices`](@ref), [`canonical_size`](@ref) and [`canonical_axes`](@ref).
+* Size/axes conversion functions: [`axes2size`](@ref), [`size2axes`](@ref), [`size2length`](@ref), [`size_tuple`](@ref), [`asaxes`](@ref), [`canonical_indices`](@ref), [`canonical_size`](@ref) and [`canonical_axes`](@ref).
 
 When creating arrays, StaticThings prefers allocation-free
 types like `StaticArrays.SArray` and `FillArrays.Fill` where feasible.

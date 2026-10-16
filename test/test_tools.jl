@@ -197,6 +197,12 @@ using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, Sta
     @test @inferred(maybestatic_reshape([v], ())) == fill(v)
     @test typeof(maybestatic_reshape([v], ())) == typeof(fill(v))
 
+    @test @inferred(size_tuple(sz)) === sz
+    @test @inferred(size_tuple(sasz)) === sisz
+    @test @inferred(size_tuple(sisz)) === sisz
+    @test @inferred(size_tuple(())) === ()
+    @test @inferred(canonical_size(size_tuple(sasz))) === sasz
+
     @test @inferred(maybestatic_length(5)) === static(1)
     @test @inferred(maybestatic_length(())) === static(0)
     @test @inferred(maybestatic_length((sz))) === static(3)
@@ -378,4 +384,22 @@ using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, Sta
     @test @inferred(size_from_type(eltype(A))) === maybestatic_size(A[1])
     @test @inferred(size_from_type(typeof(A))) === NoTypeSize{typeof(A)}()
     @test @inferred(size_from_type(String)) === NoTypeSize{String}()
+end
+
+
+@testset "type-level axes2size" begin
+    @test @inferred(axes2size(typeof((StaticOneTo(2), StaticOneTo(3))))) ===
+          StaticArrays.Size(2, 3)
+    @test @inferred(axes2size(typeof((Static.SOneTo(2), StaticOneTo(3))))) ===
+          StaticArrays.Size(2, 3)
+    @test @inferred(axes2size(typeof((StaticOneTo(2),)))) === StaticArrays.Size(2)
+    @test_throws MethodError axes2size(Tuple{Vararg{StaticOneTo{2}}})
+
+    for axs in (
+        (StaticUnitRange(2, 4), static(0):static(1), StaticOneTo(2)),
+        (static(3):static(2), StaticUnitRange(3, 2)),
+        (static(1):static(-2),),
+    )
+        @test @inferred(axes2size(typeof(axs))) === axes2size(axs)
+    end
 end
