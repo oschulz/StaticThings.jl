@@ -399,6 +399,49 @@ using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, Sta
 end
 
 
+@testset "static type reductions" begin
+    @test @inferred(tuple_type_all(T -> T <: Integer, Tuple{})) === static(true)
+    @test @inferred(tuple_type_all(T -> T <: Integer, Tuple{Int,Bool})) === static(true)
+    @test @inferred(tuple_type_all(T -> T <: Integer, Tuple{Int,Float64})) === static(false)
+    @test @inferred(tuple_type_all(T -> static(T <: Integer), Tuple{Int,Bool})) === static(true)
+
+    @test @inferred(tuple_type_any(T -> T <: Integer, Tuple{})) === static(false)
+    @test @inferred(tuple_type_any(T -> T <: Integer, Tuple{Float64,Bool})) === static(true)
+    @test @inferred(tuple_type_any(T -> T <: Integer, Tuple{Float64,String})) === static(false)
+
+    @test @inferred(tuple_type_mapreduce(sizeof, +, Tuple{Int32,Int64,Int16})) === 14
+    @test @inferred(tuple_type_reduce(promote_type, Tuple{Int,Float32})) === Float32
+    @test @inferred(tuple_type_reduce(promote_type, Tuple{Int})) === Int
+    @test @inferred(tuple_type_mapreduce(T -> static(T <: Integer), &, Tuple{Int,Bool})) ===
+          static(true)
+    @test_throws ArgumentError tuple_type_reduce(+, Tuple{})
+    @test_throws ArgumentError tuple_type_mapreduce(sizeof, +, Tuple{})
+
+    # Folding needs a fixed length, so `Vararg` tuple types are out:
+    @test_throws MethodError tuple_type_all(T -> T <: Integer, Tuple{Vararg{Int}})
+    @test_throws MethodError tuple_type_any(T -> T <: Integer, Tuple{Int,Vararg{Int}})
+    @test_throws MethodError tuple_type_mapreduce(sizeof, +, Tuple)
+    @test_throws MethodError tuple_type_reduce(promote_type, Tuple{Vararg{Int}})
+
+    # Fixed-length tuple types that share a type parameter:
+    TU = Tuple{Vector{S},Vector{S}} where S
+    @test tuple_type_mapreduce(_ -> 1, +, TU) === 2
+    @test tuple_type_all(T -> T <: AbstractVector, TU) === static(true)
+    joined = tuple_type_reduce(typejoin, TU)
+    @test joined <: Vector && Vector <: joined
+
+    # The results must be constants, not just inferred:
+    f_all() = tuple_type_all(T -> T <: Integer, Tuple{Int,Bool,Float64})
+    f_any() = tuple_type_any(T -> T <: Integer, Tuple{Float64,Bool})
+    f_red() = tuple_type_mapreduce(T -> static(sizeof(T)), +, Tuple{Int32,Int64})
+    @test @inferred(Static.False, f_all()) === static(false)
+    @test @inferred(Static.True, f_any()) === static(true)
+    @test @inferred(Static.StaticInt{12}, f_red()) === static(12)
+end
+
+
+
+
 @testset "type-level axes2size" begin
     @test @inferred(axes2size(Tuple{})) === ()
     @test @inferred(axes2size(typeof((StaticOneTo(2), StaticOneTo(3))))) ===

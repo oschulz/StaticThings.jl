@@ -17,5 +17,7 @@ Built around these alias types, StaticThings provides:
 
 * Size/axes conversion functions: [`axes2size`](@ref), [`size2axes`](@ref), [`size2length`](@ref), [`size_tuple`](@ref), [`asaxes`](@ref), [`canonical_indices`](@ref), [`canonical_size`](@ref) and [`canonical_axes`](@ref).
 
+* Constant-folding reductions over the element types of tuple types: [`tuple_type_mapreduce`](@ref), [`tuple_type_reduce`](@ref), [`tuple_type_all`](@ref) and [`tuple_type_any`](@ref).
+
 When creating arrays, StaticThings prefers allocation-free
 types like `StaticArrays.SArray` and `FillArrays.Fill` where feasible.

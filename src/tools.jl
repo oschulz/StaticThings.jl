@@ -429,3 +429,75 @@ end
 # Convert a `StaticArrayInterface.known_size` result to a canonical size:
 @inline _knownsize2size(::Type, ksz::Tuple{Vararg{Int}}) = canonical_size(static(ksz))
 @inline _knownsize2size(::Type{AT}, ::Tuple) where {AT} = NoTypeSize{AT}()
+"""
+    tuple_type_mapreduce(f, op, ::Type{<:NTuple{N,Any}})
+
+Map `f` over the element types of a fixed-length tuple type and reduce the
+results with `op`.
+
+Folded recursively from the right. For an `f` and an `op` that
+constant-fold, the result is a compile-time constant where `mapreduce` over
+a tuple of values isn't (Julia 1.10). Throws an `ArgumentError` for the
+empty tuple type.
+"""
+function tuple_type_mapreduce end
+export tuple_type_mapreduce
+
+@inline tuple_type_mapreduce(f::F, ::OP, ::Type{T}) where {F,OP,T<:Tuple{Any}} =
+    f(Base.tuple_type_head(T))
+@inline function tuple_type_mapreduce(f::F, op::OP, ::Type{T}) where {F,OP,N,T<:NTuple{N,Any}}
+    op(f(Base.tuple_type_head(T)), tuple_type_mapreduce(f, op, Base.tuple_type_tail(T)))
+end
+@noinline tuple_type_mapreduce(::F, ::OP, ::Type{Tuple{}}) where {F,OP} =
+    throw(ArgumentError("Can't reduce over the element types of an empty tuple type"))
+
+
+"""
+    tuple_type_reduce(op, ::Type{<:NTuple{N,Any}})
+
+Reduce the element types of a fixed-length tuple type with `op`.
+
+The `f = identity` case of [`tuple_type_mapreduce`](@ref).
+"""
+function tuple_type_reduce end
+export tuple_type_reduce
+
+@inline tuple_type_reduce(op::OP, ::Type{T}) where {OP,N,T<:NTuple{N,Any}} =
+    tuple_type_mapreduce(identity, op, T)
+
+
+"""
+    tuple_type_all(f, ::Type{<:NTuple{N,Any}})
+
+Whether `f` holds for every element type of a fixed-length tuple type.
+
+Returns `Static.True` or `Static.False`, folded recursively so that an `f`
+that constant-folds gives a compile-time constant where `all` doesn't
+(Julia 1.10).
+"""
+function tuple_type_all end
+export tuple_type_all
+
+@inline tuple_type_all(::F, ::Type{Tuple{}}) where {F} = static(true)
+@inline function tuple_type_all(f::F, ::Type{T}) where {F,N,T<:NTuple{N,Any}}
+    static(f(Base.tuple_type_head(T))) & tuple_type_all(f, Base.tuple_type_tail(T))
+end
+
+
+"""
+    tuple_type_any(f, ::Type{<:NTuple{N,Any}})
+
+Whether `f` holds for any element type of a fixed-length tuple type.
+
+Returns `Static.True` or `Static.False`, folded recursively so that an `f`
+that constant-folds gives a compile-time constant where `any` doesn't
+(Julia 1.10).
+"""
+function tuple_type_any end
+export tuple_type_any
+
+@inline tuple_type_any(::F, ::Type{Tuple{}}) where {F} = static(false)
+@inline function tuple_type_any(f::F, ::Type{T}) where {F,N,T<:NTuple{N,Any}}
+    static(f(Base.tuple_type_head(T))) | tuple_type_any(f, Base.tuple_type_tail(T))
+end
+
