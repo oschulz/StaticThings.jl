@@ -203,6 +203,18 @@ using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, Sta
     @test @inferred(size_tuple(())) === ()
     @test @inferred(canonical_size(size_tuple(sasz))) === sasz
 
+    # The zero-dimensional size is `()`, with or without a `Size` around it:
+    @test @inferred(canonical_size(())) === ()
+    @test @inferred(canonical_size(StaticArrays.Size())) === ()
+    @test @inferred(canonical_size((Int8(2), static(3)))) === (2, static(3))
+    @test @inferred(maybestatic_size(SArray{Tuple{},T,0,1}(v))) === ()
+    @test @inferred(staticarray_type(T, ())) === SArray{Tuple{},T,0,1}
+    @test @inferred(maybestatic_fill(v, ())) === SArray{Tuple{},T,0,1}(v)
+    for s in ((), StaticArrays.Size(), sz, sasz, sisz, (static(2), 3), (Int8(2), UInt8(3)))
+        @test canonical_size(size_tuple(s)) === canonical_size(s)
+        @test axes2size(size2axes(s)) === canonical_size(s)
+    end
+
     @test @inferred(maybestatic_length(5)) === static(1)
     @test @inferred(maybestatic_length(())) === static(0)
     @test @inferred(maybestatic_length((sz))) === static(3)
@@ -377,7 +389,7 @@ using StaticArrays: SArray, SVector, SMatrix, MVector, MMatrix, SizedVector, Sta
     @test @inferred(size_from_type(typeof(sisz))) === maybestatic_size(sisz)
     @test @inferred(size_from_type(typeof(SA))) === maybestatic_size(SA)
     @test @inferred(size_from_type(typeof(rshpSA))) === maybestatic_size(rshpSA)
-    @test @inferred(size_from_type(SArray{Tuple{},T,0,1})) === StaticArrays.Size()
+    @test @inferred(size_from_type(SArray{Tuple{},T,0,1})) === ()
     @test @inferred(size_from_type(typeof(SA'))) === StaticArrays.Size(1, len)
     @test @inferred(size_from_type(typeof(view(rshpSA, :, 1, 1)))) === StaticArrays.Size(2)
     @test @inferred(size_from_type(SVector)) === NoTypeSize{SVector}()
@@ -388,6 +400,7 @@ end
 
 
 @testset "type-level axes2size" begin
+    @test @inferred(axes2size(Tuple{})) === ()
     @test @inferred(axes2size(typeof((StaticOneTo(2), StaticOneTo(3))))) ===
           StaticArrays.Size(2, 3)
     @test @inferred(axes2size(typeof((Static.SOneTo(2), StaticOneTo(3))))) ===
@@ -396,6 +409,7 @@ end
     @test_throws MethodError axes2size(Tuple{Vararg{StaticOneTo{2}}})
 
     for axs in (
+        (),
         (StaticUnitRange(2, 4), static(0):static(1), StaticOneTo(2)),
         (static(3):static(2), StaticUnitRange(3, 2)),
         (static(1):static(-2),),

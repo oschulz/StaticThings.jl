@@ -58,7 +58,7 @@ export maybestatic_fill
 @inline maybestatic_fill(x, sz::SizeLike) = maybestatic_fill(x, size2axes(sz))
 
 @inline function maybestatic_fill(x::T, sz::StaticSizeLike) where {T}
-    fill(x, staticarray_type(T, canonical_size(sz)))
+    fill(x, staticarray_type(T, sz))
 end
 
 @inline function maybestatic_fill(x, axs::AxesLike)
@@ -77,12 +77,15 @@ end
 
 
 """
-    staticarray_type(T, sz::StaticArrays.Size)
+    staticarray_type(T, sz::StaticSizeLike)
 
 Returns the type of a static array with element type `T` and size `sz`.
 """
 function staticarray_type end
 export staticarray_type
+
+@inline staticarray_type(::Type{T}, sz::StaticSizeLike) where {T} =
+    staticarray_type(T, _static_size(sz))
 
 @inline @generated function staticarray_type(
     ::Type{T},
@@ -108,7 +111,7 @@ export maybestatic_reshape
 
 @inline maybestatic_reshape(A, sz::SizeLike) = reshape(A, asnonstatic(sz))
 @inline maybestatic_reshape(A::StaticArray, sz::StaticSizeLike) =
-    reshape(A, canonical_size(sz))
+    reshape(A, _static_size(sz))
 
 
 """
@@ -147,7 +150,7 @@ export maybestatic_size
 @inline maybestatic_size(nt::NamedTuple) = maybestatic_size(values(nt))
 @inline maybestatic_size(::StaticArrays.Size{tpl}) where {tpl} = StaticArrays.Size(length(tpl))
 @inline maybestatic_size(A::AbstractArray) = axes2size(maybestatic_axes(A))
-@inline maybestatic_size(A::StaticArray) = StaticArrays.Size(A)
+@inline maybestatic_size(A::StaticArray) = canonical_size(StaticArrays.Size(A))
 
 """
     maybestatic_axes(x)::AxesLike
@@ -181,6 +184,7 @@ export axes2size
 @inline axes2size(::Tuple{}) = ()
 @inline axes2size(axs::Tuple) = canonical_size(map(maybestatic_length, axs))
 
+@inline axes2size(::Type{Tuple{}}) = ()
 @inline axes2size(::Type{A}) where {N,A<:NTuple{N,StaticUnitRangeLike}} =
     canonical_size(_static_axes_lengths(A))
 
@@ -339,13 +343,28 @@ export canonical_indices
     canonical_size(sz::SizeLike)
 
 Return the canonical representation of a collection size.
+
+A fully static size is a `StaticArrays.Size`, except the zero-dimensional
+one, which is `()`, and dynamic dimensions are `Int`s, both as in a `size`
+from Base.
 """
 function canonical_size end
 export canonical_size
 
-@inline canonical_size(sz::SizeLike) = sz
+@inline canonical_size(sz::SizeLike) = map(_canonical_dim, sz)
+@inline canonical_size(sz::StaticArrays.Size) = sz
 @inline canonical_size(sz::Tuple{Vararg{Static.StaticInteger}}) =
     StaticArrays.Size{map(dynamic, sz)}()
+@inline canonical_size(::Tuple{}) = ()
+@inline canonical_size(::StaticArrays.Size{()}) = ()
+
+@inline _canonical_dim(n::Integer) = Int(n)
+@inline _canonical_dim(n::StaticInteger) = n
+
+# StaticArrays needs a `Size` to build and reshape its arrays, for the
+# zero-dimensional size too:
+@inline _static_size(sz::StaticSizeLike) = StaticArrays.Size{asnonstatic(sz)}()
+
 
 """
     size_tuple(sz::SizeLike)::Tuple{Vararg{IntegerLike}}
