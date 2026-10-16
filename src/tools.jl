@@ -28,9 +28,11 @@ export asnonstatic
 @inline asnonstatic(x::Number) = dynamic(x)
 @inline asnonstatic(::Tuple{}) = ()
 @static if isdefined(StaticArrays, :SUnitRange)
-    @inline asnonstatic(r::StaticArrays.SUnitRange) = r[begin]:r[end]
+    @inline asnonstatic(r::StaticArrays.SUnitRange) =
+        asnonstatic(maybestatic_first(r)):asnonstatic(maybestatic_last(r))
 end
-@inline asnonstatic(r::AbstractUnitRange) = asnonstatic(r[begin]):asnonstatic(r[end])
+@inline asnonstatic(r::AbstractUnitRange) =
+    asnonstatic(maybestatic_first(r)):asnonstatic(maybestatic_last(r))
 @inline asnonstatic(r::Base.OneTo) = Base.OneTo(asnonstatic(r.stop))
 @inline asnonstatic(::StaticOneToLike{N}) where {N} = Base.OneTo(N)
 @inline asnonstatic(x::SizeLike) = map(asnonstatic, x)
@@ -124,13 +126,13 @@ export maybestatic_length
 @inline maybestatic_length(::Tuple{Vararg{Any,N}}) where {N} = static(N)
 @inline maybestatic_length(nt::NamedTuple) = maybestatic_length(values(nt))
 @inline maybestatic_length(A::AbstractArray) = size2length(maybestatic_size(A))
+@inline maybestatic_length(r::AbstractUnitRange) = length(r)
 @static if isdefined(StaticArrays, :SUnitRange)
-    @inline maybestatic_length(r::StaticArrays.SUnitRange) = maybestatic_last(r) - maybestatic_first(r) + static(1)
+    @inline maybestatic_length(::StaticArrays.SUnitRange{B,L}) where {B,L} = static(L)
 end
-@inline maybestatic_length(r::AbstractUnitRange) = maybestatic_last(r) - maybestatic_first(r) + static(1)
-@inline maybestatic_length(r::Base.OneTo) = length(r)
 @inline maybestatic_length(::StaticArrays.SOneTo{N}) where {N} = static(N)
-@inline maybestatic_length(::Static.SOneTo{N}) where {N} = static(N)
+# Static ranges aren't normalized when empty, so compare before subtracting:
+@inline maybestatic_length(::Static.SUnitRange{F,L}) where {F,L} = static(L < F ? 0 : L - F + 1)
 
 """
     maybestatic_size(x)::SizeLike
@@ -254,6 +256,7 @@ maybestatic_first(x::Number) = x
 maybestatic_first(tpl::Tuple) = tpl[begin]
 maybestatic_first(nt::NamedTuple) = nt[begin]
 maybestatic_first(A::AbstractArray) = A[begin]
+maybestatic_first(r::AbstractRange) = first(r)
 maybestatic_first(::Base.OneTo) = static(1)
 maybestatic_first(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[begin])
 maybestatic_first(::StaticArrays.SOneTo{N}) where {N} = static(1)
@@ -279,6 +282,7 @@ maybestatic_last(x::Number) = x
 maybestatic_last(tpl::Tuple) = tpl[end]
 maybestatic_last(nt::NamedTuple) = nt[end]
 maybestatic_last(A::AbstractArray) = A[end]
+maybestatic_last(r::AbstractRange) = last(r)
 maybestatic_last(::StaticArrays.Size{tpl}) where {tpl} = static(tpl[end])
 maybestatic_last(::StaticArrays.SOneTo{N}) where {N} = static(N)
 @static if isdefined(StaticArrays, :SUnitRange)
@@ -303,10 +307,12 @@ export canonical_indices
 @inline canonical_indices(idxs::AbstractArray{<:CartesianIndex}) = idxs
 @inline canonical_indices(
     ::Static.OptionallyStaticUnitRange{<:StaticInteger{1},<:StaticInteger{N}},
-) where {N} = StaticArrays.SOneTo{N}()
+) where {N} = StaticArrays.SOneTo{max(0, N)}()
+# An empty range is clamped before the constructor subtracts, so that
+# extreme endpoints don't wrap around:
 @inline canonical_indices(
     ::Static.OptionallyStaticUnitRange{<:StaticInteger{A},<:StaticInteger{B}},
-) where {A,B} = StaticUnitRange(A, B)
+) where {A,B} = StaticUnitRange(A, B < A ? A - 1 : B)
 @inline canonical_indices(
     r::Static.OptionallyStaticUnitRange{<:StaticInteger{1},<:Integer},
 ) = Base.OneTo(last(r))

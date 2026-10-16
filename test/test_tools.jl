@@ -129,6 +129,12 @@ using StaticArrays: SArray, SVector
     @test @inferred(asnonstatic(siaxs1)) === (Base.OneTo(2), Base.OneTo(4), Base.OneTo(3))
     @test @inferred(asnonstatic(sv)) === v
 
+    # Empty ranges have no elements to take the bounds from:
+    @test @inferred(asnonstatic(3:2)) === 3:2
+    @test @inferred(asnonstatic(static(3):static(2))) === 3:2
+    @test @inferred(asnonstatic(StaticUnitRange(3, 2))) === 3:2
+    @test @inferred(maybestatic_fill(v, (3:2,))) == Fill(v, (3:2,))
+
     @test @inferred(maybestatic_fill(v, i)) === Fill(v, i)
     @test @inferred(maybestatic_fill(v, si)) === SVector(fill(v, i)...)
     @test @inferred(maybestatic_fill(v, ())) === SArray{Tuple{},T,0,1}(v)
@@ -190,6 +196,13 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_length(Static.SOneTo(4))) === static(4)
     @test @inferred(maybestatic_length(static(2):static(5))) === static(4)
     @test @inferred(maybestatic_length(StaticUnitRange(2, 5))) === static(4)
+    @test @inferred(maybestatic_length(static(3):static(1))) === static(0)
+    @test @inferred(maybestatic_length(3:1)) === 0
+    @test @inferred(maybestatic_length(Int8(-100):Int8(100))) === 201
+    @test @inferred(maybestatic_length(static(1):static(-2))) === static(0)
+    @test @inferred(canonical_indices(static(1):static(-2))) === StaticOneTo(0)
+    @test @inferred(maybestatic_length(canonical_indices(static(typemax(Int)):static(typemin(Int))))) ===
+          static(0)
     @test @inferred(maybestatic_length(rshpA)) === length(rshpA)
     @test @inferred(maybestatic_length(rshpFA)) === length(rshpA)
     @test @inferred(maybestatic_length(rshpSA)) === static(length(rshpA))
@@ -289,6 +302,8 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_first(ciA)) === first(ciA)
     @test @inferred(maybestatic_first(FA)) === first(FA)
     @test @inferred(maybestatic_first(SA)) === first(SA)
+    @test @inferred(maybestatic_first(3:1)) === 3
+    @test @inferred(maybestatic_first(Base.OneTo(0))) === static(1)
 
     @test_throws BoundsError maybestatic_last(())
     @test @inferred(maybestatic_last(v)) === v
@@ -299,6 +314,8 @@ using StaticArrays: SArray, SVector
     @test @inferred(maybestatic_last(sz)) === last(sz)
     @test @inferred(maybestatic_last(sasz)) === static(last(sz))
     @test @inferred(maybestatic_last(sisz)) === static(last(sz))
+    @test @inferred(maybestatic_last(3:1)) === 2
+    @test @inferred(maybestatic_last(Base.OneTo(0))) === 0
     @test @inferred(maybestatic_last(axs[1])) === last(axs[1])
     @test @inferred(maybestatic_last(axs[2])) === last(axs[2])
     @test @inferred(maybestatic_last(saaxs[1])) === static(last(axs[1]))
